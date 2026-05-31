@@ -1,0 +1,19 @@
+{
+  "name": "defi-dashboard",
+  "version": "1.0.0",
+  "description": "Dashboard DeFi pessoal — leitura on-chain via Ethers.js",
+  "type": "module",
+  "scripts": {
+    "test": "node test/test-uniswap.js",
+    "test:all": "node test/test-uniswap.js && node test/test-analysis.js",
+    "dev": "npx serve . -l 3000",
+    "lint": "node --check js/config.js js/uniswap.js js/aave.js js/prices.js js/analysis.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "playwright": "^1.60.0",
+    "serve": "^14.0.0"
+  },
+  "author": "Carlos",
+  "license": "MIT"
+}

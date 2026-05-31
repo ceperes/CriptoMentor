@@ -1,0 +1,2793 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⬡ DeFi Dashboard — Carlos</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #0a0a0a;
+      --surface:  #141414;
+      --surface2: #1e1e1e;
+      --border:   #252525;
+      --border2:  #333;
+      --text:     #d0d0d0;
+      --dim:      #666;
+      --bright:   #f0f0f0;
+      --green:    #00e87a;
+      --blue:     #3b9eff;
+      --yellow:   #f5c518;
+      --red:      #ff4444;
+      --orange:   #ff8c00;
+      --purple:   #b06ef3;
+      --font:     'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+      --r:        5px;
+    }
+    html { scroll-behavior: smooth; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ── */
+    #header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    #logo {
+      font-size: 15px;
+      color: var(--green);
+      letter-spacing: 2px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #addr-form {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+      min-width: 260px;
+    }
+    #addr-input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 11px;
+      padding: 5px 10px;
+      outline: none;
+    }
+    #addr-input:focus { border-color: var(--blue); }
+    #history-sel, #interval-sel {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      color: var(--dim);
+      font-family: var(--font);
+      font-size: 11px;
+      padding: 5px 8px;
+      cursor: pointer;
+      outline: none;
+    }
+    button {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 11px;
+      padding: 5px 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    button:hover { border-color: var(--blue); color: var(--blue); }
+    button.primary { border-color: var(--green); color: var(--green); }
+    button.primary:hover { background: var(--green); color: var(--bg); }
+
+    #statusbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--dim);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .sdot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--dim);
+      flex-shrink: 0;
+    }
+    .sdot.ok      { background: var(--green); }
+    .sdot.ok.auto { background: var(--green); animation: pulse-green 2.5s ease-in-out infinite; }
+    .sdot.loading { background: var(--yellow); animation: pulse 1s infinite; }
+    .sdot.warn    { background: var(--yellow); }
+    .sdot.error   { background: var(--red); }
+    @keyframes pulse       { 0%,100%{opacity:1} 50%{opacity:.3} }
+    @keyframes pulse-green { 0%,100%{opacity:1} 55%{opacity:.4} }
+
+    #refresh-wrap {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: var(--dim);
+      flex-shrink: 0;
+    }
+    #refresh-wrap label { font-size: 10px; color: var(--dim); letter-spacing: .5px; }
+
+    /* ── Tabs ── */
+    #tabs {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      gap: 2px;
+      overflow-x: auto;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--dim);
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 9px 16px;
+    }
+    .tab-btn:hover { color: var(--text); border-color: var(--border2); }
+    .tab-btn.active { color: var(--green); border-color: var(--green); }
+
+    /* ── Content ── */
+    #content {
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .ctitle {
+      font-size: 10px;
+      color: var(--dim);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Grids ── */
+    .g2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
+    .g3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+    .g4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+    @media(max-width:768px) { .g2,.g3,.g4 { grid-template-columns:1fr; } }
+    @media(max-width:600px) { .hf-mid-label { display:none !important; } }
+    @media(max-width:600px) { .mob-hide     { display:none !important; } }
+
+    /* ── Metrics ── */
+    .metric {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 12px;
+    }
+    .mlabel {
+      font-size: 10px;
+      color: var(--dim);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+    .mval {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--bright);
+      line-height: 1.2;
+    }
+    .msub { font-size: 10px; color: var(--dim); margin-top: 2px; }
+
+    /* ── Colors ── */
+    .c-green  { color: var(--green); }
+    .c-red    { color: var(--red); }
+    .c-yellow { color: var(--yellow); }
+    .c-blue   { color: var(--blue); }
+    .c-orange { color: var(--orange); }
+    .c-dim    { color: var(--dim); }
+    .c-bright { color: var(--bright); }
+
+    /* ── Tables ── */
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th {
+      text-align: left;
+      color: var(--dim);
+      font-size: 10px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+    .tar { text-align: right; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    .bg  { background:rgba(0,232,122,.12); color:var(--green);  border:1px solid rgba(0,232,122,.3); }
+    .br  { background:rgba(255,68,68,.12);  color:var(--red);    border:1px solid rgba(255,68,68,.3); }
+    .by  { background:rgba(245,197,24,.12); color:var(--yellow); border:1px solid rgba(245,197,24,.3); }
+    .bb  { background:rgba(59,158,255,.12); color:var(--blue);   border:1px solid rgba(59,158,255,.3); }
+    .bo  { background:rgba(255,140,0,.12);  color:var(--orange); border:1px solid rgba(255,140,0,.3); }
+
+    /* ── Token icons ── */
+    .tok-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+      border: 1px solid;
+    }
+    .tok-icon.btc { background:rgba(245,197,24,.12); color:var(--yellow); border-color:rgba(245,197,24,.3); }
+    .tok-icon.eth { background:rgba(59,158,255,.12);  color:var(--blue);   border-color:rgba(59,158,255,.3); }
+    .tok-icon.usd { background:rgba(0,232,122,.12);   color:var(--green);  border-color:rgba(0,232,122,.3);  }
+    .tok-icon.unk { background:rgba(102,102,102,.12); color:var(--dim);    border-color:rgba(102,102,102,.3); }
+    .tok-cell { display: flex; align-items: center; gap: 8px; }
+
+    /* ── Range bar ── */
+    .rbar-wrap { margin: 10px 0 4px; }
+    .rbar {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      height: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .rbar-active {
+      position: absolute;
+      height: 100%;
+      background: rgba(0,232,122,.18);
+      border-left: 2px solid rgba(0,232,122,.6);
+      border-right: 2px solid rgba(0,232,122,.6);
+    }
+    .rbar-cur {
+      position: absolute;
+      width: 2px;
+      height: 100%;
+      background: var(--yellow);
+      transform: translateX(-50%);
+    }
+    .rbar-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--dim);
+      margin-top: 3px;
+    }
+
+    /* ── HF gauge ── */
+    .hf-gauge {
+      height: 7px;
+      border-radius: 4px;
+      background: linear-gradient(to right, var(--red) 0%, var(--yellow) 35%, var(--green) 65%, #00ff9d 100%);
+      position: relative;
+      margin: 6px 0;
+    }
+    .hf-pin {
+      position: absolute;
+      width: 13px; height: 13px;
+      background: white;
+      border-radius: 50%;
+      top: -3px;
+      transform: translateX(-50%);
+      box-shadow: 0 0 6px rgba(255,255,255,.5);
+    }
+
+    /* ── Suggestions ── */
+    .sug {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 11px 13px;
+      margin-bottom: 8px;
+    }
+    .sug-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    .sug-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+    .sug-val   { font-size: 17px; color: var(--yellow); font-weight: 600; }
+    .sug-desc  { font-size: 11px; color: var(--dim); line-height: 1.5; }
+
+    /* ── Score dots ── */
+    .sdots { display: flex; gap: 4px; align-items: center; }
+    .sdot2 { width: 10px; height: 10px; border-radius: 50%; background: var(--border2); }
+    .sdot2.on { background: var(--green); }
+
+    /* ── Loading / Error ── */
+    .loading-msg {
+      color: var(--dim);
+      text-align: center;
+      padding: 50px 20px;
+      font-size: 13px;
+    }
+    .spin { display: inline-block; animation: spin 1.2s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err-box {
+      background: rgba(255,68,68,.08);
+      border: 1px solid rgba(255,68,68,.3);
+      border-radius: var(--r);
+      color: var(--red);
+      padding: 12px 16px;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+
+    /* ── Skeleton loading ── */
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .skel {
+      background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
+      border-radius: 3px;
+    }
+
+    /* ── Empty state ── */
+    .empty-state { text-align: center; padding: 52px 24px; }
+    .empty-icon  { font-size: 36px; margin-bottom: 14px; }
+    .empty-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .empty-desc  { font-size: 12px; color: var(--dim); line-height: 1.7; max-width: 340px; margin: 0 auto; }
+
+    /* ── Escola ── */
+    .escola-sec { margin-bottom: 22px; }
+    .escola-sec h3 {
+      color: var(--blue);
+      font-size: 13px;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .escola-sec p { color: var(--text); line-height: 1.7; margin-bottom: 6px; font-size: 12px; }
+    .formula {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--yellow);
+      border-radius: var(--r);
+      padding: 9px 13px;
+      margin: 8px 0;
+      color: var(--yellow);
+      font-size: 12px;
+    }
+    .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 8px 0; }
+    .kv dt { color: var(--dim); font-size: 11px; padding: 2px 0; }
+    .kv dd { color: var(--text); font-size: 11px; padding: 2px 0; }
+
+    /* ── Accordion Lessons ── */
+    details.lesson {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    details.lesson[open] { border-color: var(--blue); }
+    details.lesson > summary {
+      cursor: pointer;
+      padding: 11px 16px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      user-select: none;
+      list-style: none;
+    }
+    details.lesson > summary::-webkit-details-marker,
+    details.lesson > summary::marker { display: none; }
+    .lesson-num {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 10px; color: var(--dim); flex-shrink: 0;
+    }
+    details.lesson[open] .lesson-num { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .lesson-title { flex: 1; font-size: 12px; color: var(--text); }
+    details.lesson > summary:hover .lesson-title { color: var(--bright); }
+    .lesson-badge {
+      font-size: 10px; padding: 2px 7px; border-radius: 3px;
+      background: var(--surface2); color: var(--dim);
+      border: 1px solid var(--border); letter-spacing: .5px;
+      white-space: nowrap;
+    }
+    .lesson-badge.done { background:rgba(0,232,122,.12); color:var(--green); border-color:rgba(0,232,122,.3); }
+    .lesson-badge.fail { background:rgba(255,68,68,.12);  color:var(--red);   border-color:rgba(255,68,68,.3);  }
+    .lesson-body { padding: 16px; border-top: 1px solid var(--border); }
+
+    /* ── Quiz ── */
+    .quiz { background:var(--surface2); border:1px solid var(--border); border-radius:var(--r); padding:13px; margin-top:14px; }
+    .quiz-q { font-size:12px; color:var(--bright); margin-bottom:10px; font-weight:600; }
+    .quiz-opts { display:flex; flex-direction:column; gap:6px; }
+    .quiz-opt {
+      text-align:left; font-size:12px; padding:7px 12px;
+      border:1px solid var(--border2); background:var(--surface);
+      color:var(--text); border-radius:4px; cursor:pointer; transition:all .15s;
+    }
+    .quiz-opt:hover:not(:disabled) { border-color:var(--blue); color:var(--blue); }
+    .quiz-opt.correct { border-color:var(--green)!important; color:var(--green)!important; background:rgba(0,232,122,.08)!important; }
+    .quiz-opt.wrong   { border-color:var(--red)!important;   color:var(--red)!important;   background:rgba(255,68,68,.08)!important;  }
+    .quiz-opt:disabled { cursor:default; }
+    .quiz-fb { font-size:11px; margin-top:8px; min-height:16px; }
+
+    /* ── Links ── */
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .links-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 10px; }
+    .lcard {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 13px;
+      transition: border-color .15s;
+      display: block;
+    }
+    .lcard:hover { border-color: var(--blue); text-decoration: none; }
+    .lcard h4 { color: var(--bright); font-size: 12px; margin-bottom: 4px; }
+    .lcard p  { color: var(--dim); font-size: 11px; line-height: 1.4; }
+
+    /* ── Pos header ── */
+    .pos-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .pos-id { font-size: 18px; color: var(--blue); font-weight: 600; }
+    .pos-sub { color: var(--dim); font-size: 12px; }
+
+    .mb12 { margin-bottom: 12px; }
+    .mb16 { margin-bottom: 16px; }
+
+    /* ── Chart control buttons ── */
+    .cpbtn, .cmbtn {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 3px;
+      color: var(--dim);
+      font-family: var(--font);
+      font-size: 10px;
+      letter-spacing: .5px;
+      padding: 3px 9px;
+      cursor: pointer;
+      transition: all .12s;
+    }
+    .cpbtn:hover, .cmbtn:hover { color: var(--text); }
+    .cpbtn-active { color: var(--yellow) !important; border-color: rgba(245,197,24,.5) !important; background: rgba(245,197,24,.08) !important; }
+    .cmbtn-active { color: var(--green)  !important; border-color: rgba(0,232,122,.5) !important;  background: rgba(0,232,122,.08)  !important; }
+
+    /* ── Tooltips ── */
+    .tip-wrap { position:relative; display:inline-flex; align-items:center; gap:4px; }
+    .tip-icon {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:14px; height:14px; border-radius:50%;
+      background:var(--border2); color:var(--dim);
+      font-size:9px; cursor:help; font-style:normal; flex-shrink:0;
+      transition:background .15s, color .15s;
+    }
+    .tip-wrap:hover .tip-icon { background:var(--blue); color:#fff; }
+    .tip-bubble {
+      position:absolute; bottom:calc(100% + 7px); left:50%;
+      transform:translateX(-50%);
+      background:var(--surface2); border:1px solid var(--border2);
+      border-radius:5px; color:var(--text); font-size:11px;
+      line-height:1.55; padding:8px 12px;
+      pointer-events:none; opacity:0;
+      transition:opacity .18s ease;
+      z-index:300; width:210px; white-space:normal;
+      text-transform:none; letter-spacing:0; font-weight:normal;
+      box-shadow:0 4px 16px rgba(0,0,0,.4);
+    }
+    .tip-bubble::after {
+      content:''; position:absolute; top:100%; left:50%;
+      transform:translateX(-50%);
+      border:5px solid transparent; border-top-color:var(--border2);
+    }
+    .tip-wrap:hover .tip-bubble,
+    .tip-wrap.tip-open .tip-bubble { opacity: 1; }
+    .tip-wrap.tip-open .tip-icon   { background: var(--blue); color: #fff; }
+    @media (max-width: 640px) {
+      .tip-bubble {
+        left: 0 !important;
+        transform: none !important;
+        max-width: min(260px, calc(100vw - 32px));
+      }
+    }
+
+    /* ── Card / Metric status borders ── */
+    .card-ok     { border-color:rgba(0,232,122,.45); }
+    .card-warn   { border-color:rgba(245,197,24,.45); }
+    .card-urgent { border-color:rgba(255,68,68,.5); box-shadow:0 0 16px rgba(255,68,68,.07); }
+    .metric-ok     { border-color:rgba(0,232,122,.35); }
+    .metric-warn   { border-color:rgba(245,197,24,.35); }
+    .metric-urgent { border-color:rgba(255,68,68,.4); }
+
+    /* ── Section headers ── */
+    .sec-head {
+      display:flex; align-items:center; gap:10px;
+      margin:26px 0 13px; font-size:10px;
+      color:var(--dim); letter-spacing:2.5px; text-transform:uppercase;
+    }
+    .sec-head::after { content:''; flex:1; height:1px; background:var(--border); }
+    .sec-head:first-child { margin-top:0; }
+
+    /* ── Card footer ── */
+    .card-foot {
+      margin-top:13px; padding-top:9px;
+      border-top:1px solid var(--border);
+      font-size:10px; color:var(--dim);
+      display:flex; justify-content:space-between; align-items:center; gap:8px;
+    }
+    .cf-dot {
+      display:inline-block; width:6px; height:6px; border-radius:50%;
+      background:var(--green); margin-right:5px; vertical-align:middle; flex-shrink:0;
+    }
+
+    /* ── Temas ── */
+    *, *::before, *::after { transition: background-color .3s ease, color .3s ease, border-color .3s ease, box-shadow .3s ease; }
+    /* Override: elementos que NÃO devem ter transição (animações do gráfico) */
+    #btc-chart *, #tradingview-container * { transition: none !important; }
+
+    body.theme-light {
+      --bg:      #f4f4f5;
+      --surface: #ffffff;
+      --surface2:#f0f0f0;
+      --border:  #e2e2e2;
+      --border2: #cccccc;
+      --text:    #1a1a1a;
+      --dim:     #777777;
+      --bright:  #000000;
+    }
+    body.theme-light .card  { box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    body.theme-light .metric { box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+
+    body.theme-google {
+      --bg:      #ffffff;
+      --surface: #ffffff;
+      --surface2:#f8f9fa;
+      --border:  #e8eaed;
+      --border2: #dadce0;
+      --text:    #202124;
+      --dim:     #5f6368;
+      --bright:  #202124;
+      --font:    'Roboto', 'Segoe UI', sans-serif;
+    }
+    body.theme-google .card  { border-radius:8px; box-shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08); border-color:transparent; }
+    body.theme-google .metric { border-radius:8px; border-color:transparent; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    body.theme-google button  { border-radius:4px; }
+    body.theme-google .tab-btn { font-family:'Roboto',sans-serif; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <div id="logo">⬡ DeFi Dashboard</div>
+
+  <form id="addr-form" onsubmit="handleLoad(event)">
+    <input id="addr-input" type="text" spellcheck="false" autocomplete="off"
+           placeholder="Endereço 0x...">
+    <select id="history-sel" title="Histórico" onchange="selectHistory()">
+      <option value="">▾ Histórico</option>
+    </select>
+    <button type="submit" class="primary">Carregar</button>
+  </form>
+
+  <div id="statusbar">
+    <span class="sdot" id="sdot"></span>
+    <span id="stext">—</span>
+    <span id="countdown" style="font-size:10px"></span>
+  </div>
+
+  <div id="entry-wrap" style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+    <span style="font-size:10px;color:var(--dim);white-space:nowrap">₿ entrada</span>
+    <input id="btc-entry-input" type="number" placeholder="preço médio" min="0" step="100"
+      style="width:100px;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--font);font-size:11px;padding:4px 7px;outline:none"
+      onchange="saveBTCEntry(this.value)" title="Seu preço médio de compra de BTC (Montinho→Montão)">
+  </div>
+  <button id="theme-btn" onclick="cycleTheme()" title="Alternar tema" style="font-size:16px;padding:4px 10px;min-width:36px">🌙</button>
+  <div id="refresh-wrap">
+    <label for="interval-sel">↻</label>
+    <select id="interval-sel" title="Intervalo de atualização" onchange="handleIntervalChange()">
+      <option value="15">15s</option>
+      <option value="30">30s</option>
+      <option value="60">1min</option>
+      <option value="300">5min</option>
+      <option value="0">manual</option>
+    </select>
+  </div>
+</div>
+
+<div id="tabs">
+  <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+  <button class="tab-btn" data-tab="pool"     onclick="switchTab('pool')">Pool</button>
+  <button class="tab-btn" data-tab="aave"     onclick="switchTab('aave')">Aave</button>
+  <button class="tab-btn" data-tab="wallet"   onclick="switchTab('wallet')">Wallet</button>
+  <button class="tab-btn" data-tab="trade"    onclick="switchTab('trade')">Trade</button>
+  <button class="tab-btn" data-tab="escola"   onclick="switchTab('escola')">Escola</button>
+  <button class="tab-btn" data-tab="links"    onclick="switchTab('links')">Links</button>
+</div>
+
+<div id="content">
+  <div class="tab-pane active" id="tab-overview">
+    <div id="ov-load" class="loading-msg"><span class="spin">◌</span> Conectando à blockchain...</div>
+    <div id="ov-body" style="display:none"></div>
+  </div>
+
+  <div class="tab-pane" id="tab-pool">
+    <div id="pool-load" class="loading-msg"><span class="spin">◌</span> Buscando posições Uniswap v3...</div>
+    <div id="pool-body" style="display:none"></div>
+  </div>
+
+  <div class="tab-pane" id="tab-aave">
+    <div id="aave-load" class="loading-msg"><span class="spin">◌</span> Buscando posição Aave v3...</div>
+    <div id="aave-body" style="display:none"></div>
+  </div>
+
+  <div class="tab-pane" id="tab-wallet">
+    <div id="wallet-load" class="loading-msg"><span class="spin">◌</span> Buscando saldos da carteira...</div>
+    <div id="wallet-body" style="display:none"></div>
+  </div>
+
+  <div class="tab-pane" id="tab-trade">
+    <div id="trade-load" class="loading-msg"><span class="spin">◌</span> Buscando histórico BTC (CoinGecko)...</div>
+    <div id="trade-body" style="display:none"></div>
+  </div>
+
+  <div class="tab-pane" id="tab-escola">
+    <div id="escola-body"></div>
+  </div>
+
+  <div class="tab-pane" id="tab-links">
+    <div id="links-body"></div>
+  </div>
+</div>
+
+<script type="module">
+import { fetchPrices, fetchBTCHistory, fetchBTCOHLCPeriod, fetchWalletBalances }       from './js/prices.js';
+import { fetchAavePosition, calcDailyDebtCost, calcPaymentSuggestions, getLTVStatus } from './js/aave.js';
+import { fetchPositions }                                                             from './js/uniswap.js';
+import { getGasPrice, resetProvider }                                                 from './js/provider.js';
+import { analyzeMarket, calcEMA }                                                     from './js/analysis.js';
+import { WALLET_ADDRESS, AAVE_DEBT_APYS }                                            from './js/config.js';
+
+// ── State ────────────────────────────────────────────────────────────────────
+let currentAddr     = WALLET_ADDRESS;
+let isLoading       = false;
+
+const _loaded        = { ov: false, pool: false, aave: false, wallet: false, trade: false };
+const _outRangeSince = {};  // poolId → ISO timestamp when first detected OOR
+
+let refreshInterval = parseInt(localStorage.getItem('defi_refresh_interval') || '30');
+
+// ── Cache por camada ──────────────────────────────────────────────────────────
+// HIGH (15s): preços + gas  |  MID (30s): wallet + pool  |  LOW (60s): Aave + análise
+const CACHE_TTL   = 5 * 60 * 1000;          // 5 min → dot vermelho acima disso
+const _cache      = {};                       // { key: { data, ts } }
+const _tierTs     = { high: 0, mid: 0, low: 0 };
+const _tierTimers = { high: null, mid: null, low: null };
+let   _cdTick     = null;
+
+function cacheGet(key)       { const c = _cache[key]; return (c && Date.now() - c.ts < CACHE_TTL) ? c.data : null; }
+function cacheSet(key, data) { _cache[key] = { data, ts: Date.now() }; }
+function cacheAll(key)       { return _cache[key]?.data ?? null; }
+
+// Chart state
+let _chartMode      = localStorage.getItem('defi_chart_mode')   || 'own'; // 'own' | 'tv'
+let _chartPeriod    = localStorage.getItem('defi_chart_period') || '30d'; // '30d'|'7d'|'3d'|'1d'
+const _ohlcCache    = {};        // { '30d': [...], '7d': [...], ... }
+let _lwChart        = null;      // LightweightCharts instance
+let _lwCandles      = null;
+let _lwEma9         = null;
+let _lwEma21        = null;
+let _tvContainerEl  = null;      // last TV widget container element
+
+// ── Formatters ───────────────────────────────────────────────────────────────
+const f$ = (n, d = 2) =>
+  '$' + Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+const fN = (n, d = 4) =>
+  Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+const fPct = (n, d = 2) => Number(n).toFixed(d) + '%';
+
+const fTime = () => new Date().toLocaleTimeString('pt-BR');
+
+const hfColor = hf =>
+  hf >= 2.0 ? 'var(--green)' : hf >= 1.5 ? 'var(--yellow)' : 'var(--red)';
+
+const sigBadge = s =>
+  s === 'COMPRAR' ? `<span class="badge bg">${s}</span>`
+  : s === 'VENDER' ? `<span class="badge br">${s}</span>`
+  : `<span class="badge by">${s}</span>`;
+
+// Token icon metadata
+function tokIcon(sym) {
+  const s = (sym || '').toUpperCase();
+  if (s === 'BTC' || s === 'WBTC')                        return { cls: 'btc', ch: '₿'  };
+  if (s === 'ETH' || s === 'WETH')                        return { cls: 'eth', ch: 'Ξ'  };
+  if (['USDT','USDC','DAI','USDE','MUSD'].includes(s))    return { cls: 'usd', ch: '$'  };
+  return { cls: 'unk', ch: s.slice(0, 2) };
+}
+
+function tip(label, tooltip) {
+  return `<span class="tip-wrap">${label}<i class="tip-icon">i</i><span class="tip-bubble">${tooltip}</span></span>`;
+}
+
+function cardFoot(source, extra = '') {
+  return `<div class="card-foot"><span><span class="cf-dot"></span>${source}</span>${extra ? `<span>${extra}</span>` : ''}</div>`;
+}
+
+function gasStatusClass(gwei) {
+  return gwei < 20 ? 'card-ok' : gwei < 50 ? 'card-warn' : 'card-urgent';
+}
+
+function hfStatusClass(hf) {
+  return hf >= 2.0 ? 'card-ok' : hf >= 1.5 ? 'card-warn' : 'card-urgent';
+}
+
+function ltvStatusClass(ltv) {
+  return ltv < 40 ? 'metric-ok' : ltv < 60 ? 'metric-warn' : 'metric-urgent';
+}
+
+// ── Temas ────────────────────────────────────────────────────────────────────
+const THEMES      = ['dark', 'light', 'google'];
+const THEME_ICONS = { dark: '🌙', light: '☀️', google: '🎨' };
+let   _theme      = localStorage.getItem('defi_theme') || 'dark';
+
+function applyTheme(t) {
+  _theme = t;
+  document.body.className = t === 'dark' ? '' : `theme-${t}`;
+  localStorage.setItem('defi_theme', t);
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = THEME_ICONS[t];
+}
+window.cycleTheme = () => applyTheme(THEMES[(THEMES.indexOf(_theme) + 1) % THEMES.length]);
+
+// ── LocalStorage history ─────────────────────────────────────────────────────
+const HKEY      = 'defi_wallet_history';
+const IKEY      = 'defi_refresh_interval';
+const ENTRY_KEY = 'defi_btc_entry';
+let   _btcEntry = parseFloat(localStorage.getItem(ENTRY_KEY) || '0');
+
+window.saveBTCEntry = v => {
+  _btcEntry = parseFloat(v) || 0;
+  localStorage.setItem(ENTRY_KEY, String(_btcEntry));
+};
+
+// Slider WETH→dívida — persiste entre re-renders
+// ── Pool Capital Simulator ─────────────────────────────────────────────────────
+window._poolSim        = window._poolSim || {};   // { "posId_tokenIdx": {pct, option} }
+window._wethPct        = window._wethPct || 0;
+window._aaveSliderData = null;
+
+window.simSetOption = function(posId, tokenIdx, option) {
+  const key = `${posId}_${tokenIdx}`;
+  if (!window._poolSim[key]) window._poolSim[key] = { pct: 0 };
+  window._poolSim[key].option = option;
+  document.querySelectorAll(`[data-opt-key="${key}"]`).forEach(btn => {
+    const active = btn.dataset.opt === option;
+    btn.style.background = active ? (option === 'collateral' ? 'var(--blue)' : '#22c55e') : 'var(--surface2)';
+    btn.style.color = active ? '#fff' : 'var(--dim)';
+  });
+  window.simUpdate(posId, tokenIdx, window._poolSim[key].pct || 0);
+};
+
+window.simUpdate = function(posId, tokenIdx, pct) {
+  const d = window._aaveSliderData;
+  if (!d) return;
+  pct = Number(pct);
+  const key = `${posId}_${tokenIdx}`;
+  if (!window._poolSim[key]) window._poolSim[key] = {};
+  window._poolSim[key].pct = pct;
+
+  const pos = (d.positions || []).find(p => String(p.id) === String(posId));
+  if (!pos) return;
+  const token    = tokenIdx === 0 ? pos.token0 : pos.token1;
+  const amount   = (tokenIdx === 0 ? pos.amount0 : pos.amount1) || 0;
+  const tokenUSD = amount * (token.price || 0);
+  const useUSD   = tokenUSD * (pct / 100);
+
+  let option = window._poolSim[key].option;
+  if (!option) {
+    const stables = ['USDT','USDC','DAI','USDe','mUSD'];
+    option = stables.includes(token.sym) ? 'debt' : 'collateral';
+    window._poolSim[key].option = option;
+  }
+  const isDebt  = option === 'debt';
+  const newDebt = isDebt ? Math.max(0.01, d.totalDebtUSD - useUSD) : d.totalDebtUSD;
+  const newColl = isDebt ? d.totalCollateralUSD : d.totalCollateralUSD + useUSD;
+  const newHF   = (newColl * d.impliedLT) / newDebt;
+  const newLTV  = newDebt / newColl * 100;
+
+  const pctEl = document.getElementById(`sim-pct-${key}`);
+  if (pctEl) pctEl.textContent = pct + '%';
+  const resEl = document.getElementById(`sim-res-${key}`);
+  if (!resEl) return;
+
+  const hfc = hf => hf >= 2.0 ? '#00e87a' : hf >= 1.5 ? '#f5c518' : '#ff4444';
+  const fU  = v => '$' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  if (pct === 0) {
+    resEl.style.cssText = 'border:1px solid var(--border);border-radius:4px;padding:9px 11px;min-height:40px;background:var(--surface2);transition:background .2s,border-color .2s';
+    resEl.innerHTML = '<span style="color:#888;font-size:10px">Mova o slider para simular</span>';
+    return;
+  }
+  let sMsg, sColor, bg, br;
+  if      (newHF >= 2.0) { sMsg = '✅ RESOLVE O PROBLEMA DE LTV'; sColor = '#00e87a'; bg = 'rgba(0,232,122,.08)'; br = 'rgba(0,232,122,.4)'; }
+  else if (newHF >= 1.8) { sMsg = '⚠️ MELHORA MAS NÃO RESOLVE — combine com pagamento parcial'; sColor = '#f5c518'; bg = 'rgba(245,197,24,.08)'; br = 'rgba(245,197,24,.4)'; }
+  else                   { sMsg = '❌ INSUFICIENTE — precisa de ação adicional'; sColor = '#ff4444'; bg = 'rgba(255,68,68,.07)'; br = 'rgba(255,68,68,.35)'; }
+
+  resEl.style.cssText = `border:1px solid ${br};border-radius:4px;padding:9px 11px;min-height:40px;background:${bg};transition:background .2s,border-color .2s`;
+  resEl.innerHTML = `
+    <div style="font-size:10px;color:#999;margin-bottom:4px">${isDebt?'Pagando dívida':'Adicionando colateral'}: <b style="color:var(--text)">${fU(useUSD)}</b></div>
+    <div style="font-size:11px;margin-bottom:5px">HF: <b style="color:${hfc(newHF)}">${newHF.toFixed(2)}</b> &nbsp;·&nbsp; LTV: <b>${newLTV.toFixed(1)}%</b></div>
+    <div style="font-size:11px;font-weight:600;color:${sColor}">${sMsg}</div>`;
+};
+
+// ── Simulador WETH das pools → pagamento de dívida Aave ───────────────────────
+window.calcWethConvert = function(pct) {
+  const d = window._aaveSliderData;
+  if (!d) return;
+  window._wethPct = pct;
+
+  const pctEl = document.getElementById('weth-slider-pct');
+  if (pctEl) pctEl.textContent = pct + '%';
+  const resEl = document.getElementById('weth-slider-result');
+  if (!resEl) return;
+
+  if (pct === 0) {
+    resEl.style.cssText = 'border:1px solid var(--border);border-radius:5px;padding:11px 13px;min-height:46px;background:var(--surface2);transition:background .25s,border-color .25s';
+    resEl.innerHTML = '<span style="color:var(--dim);font-size:11px">Mova o slider para simular a conversão</span>';
+    return;
+  }
+
+  const useUSD  = (d.wethPoolUSD || 0) * pct / 100;
+  const newDebt = Math.max(0.01, d.totalDebtUSD - useUSD);
+  const newHF   = (d.totalCollateralUSD * d.impliedLT) / newDebt;
+  const newLTV  = newDebt / d.totalCollateralUSD * 100;
+
+  const hfc = hf => hf >= 2.0 ? '#00e87a' : hf >= 1.5 ? '#f5c518' : '#ff4444';
+  const fU  = v => '$' + v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  let sMsg, sColor, bg, br;
+  if      (newHF >= 2.0) { sMsg = '✅ RESOLVE — HF ≥ 2.0'; sColor = '#00e87a'; bg = 'rgba(0,232,122,.08)'; br = 'rgba(0,232,122,.4)'; }
+  else if (newHF >= 1.8) { sMsg = '⚠️ MELHORA MAS NÃO RESOLVE — combine com pagamento parcial'; sColor = '#f5c518'; bg = 'rgba(245,197,24,.08)'; br = 'rgba(245,197,24,.4)'; }
+  else                   { sMsg = '❌ INSUFICIENTE — precisa de ação adicional'; sColor = '#ff4444'; bg = 'rgba(255,68,68,.07)'; br = 'rgba(255,68,68,.35)'; }
+
+  resEl.style.cssText = `border:1px solid ${br};border-radius:5px;padding:11px 13px;min-height:46px;background:${bg};transition:background .25s,border-color .25s`;
+  resEl.innerHTML = `
+    <div style="font-size:10px;color:#999;margin-bottom:5px">Convertendo <b style="color:var(--text)">${fU(useUSD)}</b> de WETH para pagar dívida</div>
+    <div style="font-size:11px;margin-bottom:5px">
+      HF: <b style="color:${hfc(newHF)}">${newHF.toFixed(2)}</b>
+      &nbsp;·&nbsp; LTV: <b>${newLTV.toFixed(1)}%</b>
+      &nbsp;·&nbsp; Dívida restante: <b>${fU(newDebt)}</b>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:${sColor}">${sMsg}</div>`;
+};
+
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem(HKEY) || '[]'); }
+  catch { return []; }
+}
+
+function addHistory(addr) {
+  let h = getHistory().filter(a => a.toLowerCase() !== addr.toLowerCase());
+  h.unshift(addr);
+  localStorage.setItem(HKEY, JSON.stringify(h.slice(0, 10)));
+  buildHistoryUI();
+}
+
+function buildHistoryUI() {
+  const sel = document.getElementById('history-sel');
+  sel.innerHTML = '<option value="">▾ Histórico</option>';
+  getHistory().forEach(a => {
+    const o = document.createElement('option');
+    o.value = a;
+    o.textContent = a.slice(0, 8) + '…' + a.slice(-6);
+    sel.appendChild(o);
+  });
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+window.switchTab = name => {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === name));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  if (window.innerWidth < 768)
+    document.getElementById('content').scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+// ── Form handlers ─────────────────────────────────────────────────────────────
+window.handleLoad = e => {
+  if (e) e.preventDefault();
+  const v = document.getElementById('addr-input').value.trim();
+  if (!v || v.length < 10) return;
+  currentAddr = v;
+  addHistory(v);
+  resetProvider();
+  // New address — reset rendered flags so loading spinners show again
+  Object.keys(_loaded).forEach(k => _loaded[k] = false);
+  loadAll(currentAddr);
+};
+
+window.selectHistory = () => {
+  const sel = document.getElementById('history-sel');
+  if (!sel.value) return;
+  document.getElementById('addr-input').value = sel.value;
+  sel.value = '';
+  window.handleLoad(null);
+};
+
+// ── Interval change ───────────────────────────────────────────────────────────
+window.handleIntervalChange = () => {
+  refreshInterval = parseInt(document.getElementById('interval-sel').value);
+  localStorage.setItem(IKEY, String(refreshInterval));
+  startTiers(currentAddr);
+};
+
+// ── Status ────────────────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  const dot = document.getElementById('sdot');
+  if (dot) dot.className = `sdot ${state}`;
+  const stxt = document.getElementById('stext');
+  if (stxt) stxt.textContent = text;
+}
+
+function refreshStatus() {
+  const dot  = document.getElementById('sdot');
+  const stxt = document.getElementById('stext');
+  if (!dot || !stxt || !_cache.prices?.data) return;
+
+  const now  = Date.now();
+  const hAge = now - (_cache.prices?.ts    ?? 0);
+  const mAge = now - (_cache.positions?.ts ?? 0);
+  const lAge = now - (_cache.aave?.ts      ?? 0);
+  const maxAge = Math.max(
+    _cache.prices?.data    ? hAge : 0,
+    _cache.positions?.data ? mAge : 0,
+    _cache.aave?.data      ? lAge : 0
+  );
+
+  if (maxAge > CACHE_TTL) {
+    dot.className = 'sdot error';
+    stxt.textContent = `Cache ${Math.floor(maxAge / 60000)}min`;
+  } else if (hAge > 16000 || mAge > 32000 || lAge > 65000) {
+    dot.className = 'sdot warn';
+    stxt.textContent = `Cache · ${fTime()}`;
+  } else {
+    dot.className = 'sdot ok' + (refreshInterval > 0 ? ' auto' : '');
+    stxt.textContent = `Atualizado ${fTime()}`;
+  }
+}
+
+// ── Tab loading states ────────────────────────────────────────────────────────
+function skeletonFor(tab) {
+  const s = (w, h) =>
+    `<span class="skel" style="width:${w};height:${h}px;display:block;margin-bottom:8px"></span>`;
+  const metric = () =>
+    `<div class="metric">${s('65%',10)}${s('80%',28)}${s('50%',10)}</div>`;
+
+  if (tab === 'ov') return `
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <div class="card" style="flex:1;min-width:260px;padding:14px 16px">
+        ${s('40%',10)}${s('100%',13)}${s('85%',13)}${s('70%',13)}
+      </div>
+      <div class="card" style="min-width:220px;max-width:320px;padding:14px 16px">
+        ${s('30%',10)}${s('80%',20)}${s('90%',13)}${s('60%',13)}
+      </div>
+    </div>
+    <div class="card mb16"><div class="g3">${metric()}${metric()}${metric()}</div></div>
+    <div class="card"><div class="g4">${metric()}${metric()}${metric()}${metric()}</div></div>`;
+
+  if (tab === 'pool') return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>${s('110px',28)}${s('80px',10)}</div>
+        <span class="skel" style="width:90px;height:20px;display:inline-block"></span>
+      </div>
+      <div class="g2 mb12">
+        <div>${s('40%',10)}${s('100%',13)}${s('100%',13)}${s('100%',13)}</div>
+        <div>${s('50%',10)}${s('100%',13)}${s('100%',13)}${s('100%',13)}</div>
+      </div>
+      <span class="skel" style="height:18px;display:block;border-radius:4px"></span>
+    </div>`;
+
+  if (tab === 'aave') return `
+    <div class="card mb16">
+      <div style="display:flex;text-align:center;margin-bottom:16px">
+        ${[0,1,2].map((_,i) => `<div style="flex:1;padding:6px 12px${i<2?';border-right:1px solid var(--border)':''}">
+          ${s('55%',10)}${s('70%',34)}${s('45%',10)}</div>`).join('')}
+      </div>
+      <span class="skel" style="height:20px;display:block;border-radius:6px"></span>
+    </div>
+    <div class="card">
+      <div class="g4 mb12">${metric()}${metric()}${metric()}${metric()}</div>
+      <span class="skel" style="height:60px;display:block;border-radius:4px"></span>
+    </div>`;
+
+  if (tab === 'wallet') return `
+    <div class="card">
+      ${s('30%',10)}
+      ${[0,1,2,3].map(() => `
+        <div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);align-items:center">
+          <span class="skel" style="width:26px;height:26px;border-radius:50%;flex-shrink:0"></span>
+          <span class="skel" style="height:13px;width:60px;display:inline-block"></span>
+          <span class="skel" style="height:13px;flex:1;display:inline-block"></span>
+          <span class="skel" style="height:13px;width:80px;display:inline-block"></span>
+        </div>`).join('')}
+    </div>`;
+
+  if (tab === 'trade') return `
+    <div class="card mb16">
+      <span class="skel" style="height:320px;display:block"></span>
+    </div>
+    <div class="g2 mb16">
+      <div class="card">
+        ${s('50%',10)}
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px">
+          <div>${s('80px',10)}${s('100px',28)}</div>
+          <div>${s('60px',10)}${s('80px',20)}</div>
+        </div>
+      </div>
+      <div class="card">${s('60%',10)}${s('100%',13)}${s('100%',13)}${s('100%',13)}${s('100%',13)}</div>
+    </div>`;
+
+  return `<div style="padding:40px;text-align:center"><span class="spin">◌</span></div>`;
+}
+
+function showLoad(tab) {
+  const ld = document.getElementById(`${tab}-load`);
+  const bd = document.getElementById(`${tab}-body`);
+  if (ld) { ld.innerHTML = skeletonFor(tab); ld.style.display = 'block'; }
+  if (bd) bd.style.display = 'none';
+}
+function showBody(tab) {
+  const ld = document.getElementById(`${tab}-load`);
+  const bd = document.getElementById(`${tab}-body`);
+  if (ld) ld.style.display = 'none';
+  if (bd) bd.style.display = 'block';
+}
+function showErr(tab, msg) {
+  const bd = document.getElementById(`${tab}-body`);
+  if (bd) bd.innerHTML = `<div class="err-box">⚠ ${msg}</div>`;
+  showBody(tab);
+}
+
+// ── Tier timers ───────────────────────────────────────────────────────────────
+function startTiers(addr) {
+  Object.keys(_tierTimers).forEach(k => { clearInterval(_tierTimers[k]); _tierTimers[k] = null; });
+  if (_cdTick) { clearInterval(_cdTick); _cdTick = null; }
+
+  const cnt = document.getElementById('countdown');
+  if (refreshInterval === 0) {
+    if (cnt) cnt.textContent = 'manual';
+    document.getElementById('sdot')?.classList.remove('auto');
+    return;
+  }
+
+  _tierTimers.high = setInterval(() => loadHighTier(addr), 15000);
+  _tierTimers.mid  = setInterval(() => loadMidTier(addr),  30000);
+  _tierTimers.low  = setInterval(() => loadLowTier(addr),  60000);
+
+  _cdTick = setInterval(() => {
+    const el = document.getElementById('countdown');
+    if (!el) return;
+    const next = Math.max(0, 15 - Math.floor((Date.now() - (_cache.prices?.ts ?? 0)) / 1000));
+    el.textContent = `↻ ${next}s`;
+  }, 1000);
+}
+
+// ── Carga inicial (todas as camadas em paralelo) ──────────────────────────────
+async function loadAll(addr) {
+  if (isLoading) return;
+  isLoading = true;
+  setStatus('loading', 'Conectando…');
+
+  if (!_loaded.ov)     showLoad('ov');
+  if (!_loaded.pool)   showLoad('pool');
+  if (!_loaded.aave)   showLoad('aave');
+  if (!_loaded.wallet) showLoad('wallet');
+  if (!_loaded.trade)  showLoad('trade');
+
+  Object.keys(_tierTimers).forEach(k => { clearInterval(_tierTimers[k]); _tierTimers[k] = null; });
+
+  const [pricesRes, gasRes] = await Promise.allSettled([fetchPrices(), getGasPrice()]);
+
+  if (pricesRes.status === 'fulfilled') { cacheSet('prices', pricesRes.value); _tierTs.high = Date.now(); }
+  if (gasRes.status    === 'fulfilled') { cacheSet('gas',    gasRes.value);    }
+
+  const prices = cacheAll('prices');
+  const gas    = cacheAll('gas') ?? { gwei: 0, label: '—', color: 'var(--dim)', collectCostUSD: 0 };
+
+  if (prices) {
+    const [posRes, aaveRes, walRes] = await Promise.allSettled([
+      fetchPositions(addr, prices),
+      fetchAavePosition(addr),
+      fetchWalletBalances(addr, prices),
+    ]);
+    if (posRes.status  === 'fulfilled')                    { cacheSet('positions', posRes.value);  _tierTs.mid = Date.now(); }
+    if (aaveRes.status === 'fulfilled' && aaveRes.value)   { cacheSet('aave',      aaveRes.value); _tierTs.low = Date.now(); }
+    if (walRes.status  === 'fulfilled' && walRes.value)    { cacheSet('wallet',    walRes.value);  }
+  }
+
+  isLoading = false;
+  renderAll();
+
+  if (!_loaded.ov) {
+    const msg = 'Falha na conexão — verifique o RPC no config.js';
+    showErr('ov', msg); showErr('pool', msg); showErr('aave', msg); showErr('wallet', msg);
+  }
+
+  loadTrade(cacheAll('prices')?.btc).catch(e => console.warn('[trade]', e.message));
+  startTiers(addr);
+}
+
+async function loadTrade(btcPrice) {
+  if (!btcPrice) return;
+  try {
+    const [hist, ohlc] = await Promise.all([
+      fetchBTCHistory(60),
+      fetchBTCOHLCPeriod(_chartPeriod).catch(e => { console.warn('OHLC:', e.message); return null; }),
+    ]);
+    const arr = hist.map(h => h.price);
+    const an  = analyzeMarket(arr, btcPrice);
+    cacheSet('trade', { an, ohlc });
+    renderTrade(an, ohlc);
+  } catch (e) {
+    console.warn('[loadTrade]', e.message);
+    const cached = cacheAll('trade');
+    if (cached) renderTrade(cached.an, cached.ohlc);
+    else if (!_loaded.trade) showErr('trade', 'Dados temporariamente indisponíveis');
+  }
+}
+
+// ── Loaders por camada ────────────────────────────────────────────────────────
+async function loadHighTier(addr) {
+  const [pR, gR] = await Promise.allSettled([fetchPrices(), getGasPrice()]);
+  if (pR.status === 'fulfilled') { cacheSet('prices', pR.value); _tierTs.high = Date.now(); }
+  if (gR.status === 'fulfilled') cacheSet('gas', gR.value);
+  renderAll();
+}
+
+async function loadMidTier(addr) {
+  const prices = cacheAll('prices');
+  if (!prices) return;
+  const [posR, walR] = await Promise.allSettled([
+    fetchPositions(addr, prices),
+    fetchWalletBalances(addr, prices),
+  ]);
+  if (posR.status === 'fulfilled')              { cacheSet('positions', posR.value); _tierTs.mid = Date.now(); }
+  if (walR.status === 'fulfilled' && walR.value) cacheSet('wallet', walR.value);
+  renderAll();
+}
+
+async function loadLowTier(addr) {
+  const prices = cacheAll('prices');
+  if (!prices) return;
+  try {
+    const aave = await fetchAavePosition(addr);
+    if (aave) { cacheSet('aave', aave); _tierTs.low = Date.now(); }
+  } catch(e) { console.warn('[LOW]', e.message); }
+  renderAll();
+  loadTrade(cacheAll('prices')?.btc).catch(e => console.warn('[trade/low]', e.message));
+}
+
+// ── Renderiza todas as abas a partir do cache ─────────────────────────────────
+function renderAll() {
+  const prices    = cacheAll('prices');
+  const gas       = cacheAll('gas');
+  const positions = cacheAll('positions') ?? [];
+  const aave      = cacheAll('aave');
+  const wallet    = cacheAll('wallet');
+
+  if (!prices || !gas) return;
+
+  // Track when each position first went out-of-range
+  const _oorNow = new Date().toISOString();
+  positions.forEach(p => {
+    if (!p.inRange) { if (!_outRangeSince[p.id]) _outRangeSince[p.id] = _oorNow; }
+    else            { delete _outRangeSince[p.id]; }
+  });
+
+  const totalCap   = positions.reduce((s, p) => s + p.capitalUSD, 0);
+  const totalFees  = positions.reduce((s, p) => s + p.feeUSD,     0);
+  const net        = aave ? aave.totalCollateralUSD - aave.totalDebtUSD : 0;
+  const walletUSD  = wallet ? wallet.totalUSD : 0;
+  const total      = totalCap + totalFees + net + walletUSD;
+
+  const dailyCost   = aave ? calcDailyDebtCost(aave.debtsByToken, prices.btc) : 0;
+  const suggestions = aave ? calcPaymentSuggestions(aave, totalFees, dailyCost, prices.btc) : null;
+  const ltvSt       = aave ? getLTVStatus(aave.ltv, aave.totalCollateralUSD, aave.totalDebtUSD) : null;
+
+  renderOverview(prices, gas, positions, aave, totalCap, totalFees, wallet, total);
+  renderPool(positions, prices);
+  renderAave(aave, dailyCost, suggestions, ltvSt, prices, totalFees, positions, wallet);
+  renderWallet(wallet, total);
+  refreshStatus();
+}
+
+// ── Resumo inteligente e semáforo ─────────────────────────────────────────────
+function semaphoreEmoji(status) {
+  return status === 'ok' ? '🟢' : status === 'warn' ? '🟡' : '🔴';
+}
+
+function aaveStatus(aave) {
+  if (!aave) return 'ok';
+  return aave.healthFactor < 1.5 ? 'urgent' : aave.healthFactor < 2.0 ? 'warn' : 'ok';
+}
+
+function poolStatus(positions) {
+  if (!positions.length) return 'ok';
+  const outCount = positions.filter(p => !p.inRange).length;
+  return outCount === positions.length ? 'urgent' : outCount > 0 ? 'warn' : 'ok';
+}
+
+function walletStatus(wallet, total) {
+  if (!wallet || wallet.totalUSD === 0) return 'warn';
+  return 'ok';
+}
+
+function generateSummary(prices, gas, positions, aave, totalFees, suggestions) {
+  const items = [];
+
+  if (aave) {
+    if (aave.healthFactor < 1.5) {
+      items.push(`🔴 <b>URGENTE:</b> Health Factor ${aave.healthFactor.toFixed(2)} — risco de liquidação. Pague dívida imediatamente.`);
+    } else if (aave.healthFactor < 2.0) {
+      const pay = suggestions?.medium?.value;
+      items.push(`⚠️ HF ${aave.healthFactor.toFixed(2)} abaixo do ideal. ${pay ? `Considere pagar <b>${f$(pay)}</b> para LTV 35%.` : 'Monitore o LTV.'}`);
+    }
+  }
+
+  const outPos = positions.filter(p => !p.inRange);
+  outPos.forEach(p => {
+    const ts    = _outRangeSince[p.id];
+    const since = ts ? ` desde ${new Date(ts).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}` : '';
+    if (p.currentUSD < p.floorUSD) {
+      const gap     = p.floorUSD - p.currentUSD;
+      const risePct = (gap / p.currentUSD * 100).toFixed(1);
+      items.push(`📍 Pool <b>#${p.id}</b> fora do range${since} — fees pausadas. BTC em <b>${f$(p.currentUSD,0)}</b>, piso <b>${f$(p.floorUSD,0)}</b> (falta +${risePct}%).`);
+    } else {
+      const gap     = p.currentUSD - p.ceilUSD;
+      const fallPct = (gap / p.currentUSD * 100).toFixed(1);
+      items.push(`📍 Pool <b>#${p.id}</b> fora do range${since} — fees pausadas. BTC em <b>${f$(p.currentUSD,0)}</b>, teto <b>${f$(p.ceilUSD,0)}</b> (+${fallPct}% acima).`);
+    }
+  });
+
+  if (totalFees > 5) {
+    const gasOk = gas.gwei < 20;
+    items.push(`💰 <b>${f$(totalFees, 2)}</b> em fees disponíveis.${gasOk ? ' Gas baixo — bom momento para coletar.' : ''}`);
+  }
+
+  if (gas.gwei > 50) {
+    items.push(`⛽ Gas alto (${gas.gwei.toFixed(0)} Gwei) — aguarde antes de transacionar.`);
+  }
+
+  // Estratégia Montinho→Montão: posição relativa ao preço de entrada
+  if (_btcEntry > 0 && prices?.btc) {
+    const diff  = prices.btc - _btcEntry;
+    const pctAb = Math.abs(diff / _btcEntry * 100).toFixed(1);
+    if (diff >= 0) {
+      items.push(`📈 BTC <b>${f$(prices.btc, 0)}</b> — ${pctAb}% acima da sua entrada <b>${f$(_btcEntry, 0)}</b>. Montão crescendo. ✅`);
+    } else {
+      items.push(`📉 BTC <b>${f$(prices.btc, 0)}</b> — ${pctAb}% abaixo da sua entrada <b>${f$(_btcEntry, 0)}</b>. Montinho→Montão: segure e acumule, não venda.`);
+    }
+  }
+
+  if (!items.length) {
+    const inR = positions.filter(p => p.inRange).length;
+    items.push(`✅ Tudo dentro dos parâmetros. ${aave ? `HF ${aave.healthFactor.toFixed(2)} · LTV ${aave.ltv.toFixed(1)}% · ` : ''}${inR}/${positions.length} pools no range.`);
+  }
+
+  return items;
+}
+
+function getNextAction(prices, gas, positions, aave, totalFees, suggestions) {
+  if (aave && aave.healthFactor < 1.5) {
+    return { urgency: 'urgent', icon: '🔴', title: 'Pagar Dívida — URGENTE',
+      desc: `HF ${aave.healthFactor.toFixed(2)} próximo da liquidação. Pague ao menos ${f$(suggestions?.minimum?.value || 0)}.`,
+      href: 'https://app.aave.com/', btn: 'Abrir Aave ↗' };
+  }
+  if (aave && aave.healthFactor < 2.0) {
+    return { urgency: 'warn', icon: '⚠️', title: 'Reduzir LTV',
+      desc: `HF ${aave.healthFactor.toFixed(2)} — pague ${f$(suggestions?.medium?.value || 0)} para atingir LTV 35%.`,
+      href: 'https://app.aave.com/', btn: 'Abrir Aave ↗' };
+  }
+  const outPos = positions.find(p => !p.inRange);
+  if (outPos) {
+    return { urgency: 'warn', icon: '📍', title: `Rebalancear Pool #${outPos.id}`,
+      desc: `Posição fora do range. Capital parado, sem geração de fees.`,
+      href: `https://app.uniswap.org/pool/${outPos.id}`, btn: 'Abrir Uniswap ↗' };
+  }
+  if (totalFees > 5 && gas.gwei < 20) {
+    return { urgency: 'ok', icon: '💰', title: 'Coletar Fees',
+      desc: `${f$(totalFees, 2)} disponíveis e gas baixo (${gas.gwei.toFixed(0)} Gwei). Bom momento.`,
+      href: 'https://app.uniswap.org/pool', btn: 'Abrir Uniswap ↗' };
+  }
+  return { urgency: 'ok', icon: '✅', title: 'Monitorando',
+    desc: `Tudo dentro dos parâmetros. Próxima atualização em breve.`,
+    href: null, btn: null };
+}
+
+function generateScenarios(aave, positions, wallet, prices, totalFees, dailyCost) {
+  if (!aave || aave.totalDebtUSD < 0.01) return [];
+
+  const impliedLT = aave.totalCollateralUSD > 0
+    ? (aave.healthFactor * aave.totalDebtUSD) / aave.totalCollateralUSD
+    : 0.78;
+
+  const calcHF = payUSD => {
+    const newDebt = Math.max(0.01, aave.totalDebtUSD - Math.min(payUSD, aave.totalDebtUSD * 0.999));
+    return (aave.totalCollateralUSD * impliedLT) / newDebt;
+  };
+
+  const calcHFSell = sellUSD => {
+    const s       = Math.min(sellUSD, aave.totalCollateralUSD * 0.99);
+    const newCol  = aave.totalCollateralUSD - s;
+    const newDebt = Math.max(0.01, aave.totalDebtUSD - s);
+    return (newCol * impliedLT) / newDebt;
+  };
+
+  const scoreIt = (newHF, preserveWBTC, poolActive, secondaryOnly, sellsWBTC, closesPool) =>
+    (newHF > 2.0      ?  3 : 0) +
+    (preserveWBTC     ?  2 : 0) +
+    (poolActive       ?  2 : 0) +
+    (secondaryOnly    ?  1 : 0) +
+    (sellsWBTC        ? -3 : 0) +
+    (closesPool       ? -1 : 0);
+
+  const poolCount = positions.length;
+  const ethUSD    = wallet?.ethUSD ?? 0;
+  const scenarios = [];
+
+  // A: Fees apenas
+  const feePay = Math.min(totalFees, aave.totalDebtUSD);
+  {
+    const hf = feePay > 0 ? calcHF(feePay) : aave.healthFactor;
+    scenarios.push({
+      title: 'Coletar fees e pagar dívida',
+      desc: feePay > 0
+        ? `Use ${f$(feePay,2)} em fees acumuladas. WBTC preservado, pool${poolCount>1?'s':''} ativa${poolCount>1?'s':''}.`
+        : 'Sem fees disponíveis agora. Aguarde acumulação.',
+      hf, score: scoreIt(hf, true, poolCount > 0, true, false, false), disabled: feePay <= 0
+    });
+  }
+
+  // B: Fees + ETH da wallet
+  {
+    const combined = Math.min(totalFees + ethUSD, aave.totalDebtUSD);
+    const hf = combined > 0 ? calcHF(combined) : aave.healthFactor;
+    scenarios.push({
+      title: 'Fees + ETH da wallet',
+      desc: ethUSD > 0
+        ? `Combine ${f$(totalFees,2)} fees + ${f$(ethUSD,2)} ETH. Máximo sem tocar no WBTC.`
+        : `Sem ETH na wallet. Equivalente a usar só fees (${f$(feePay,2)}).`,
+      hf, score: scoreIt(hf, true, poolCount > 0, true, false, false), disabled: combined <= 0
+    });
+  }
+
+  // C: Fechar menor pool
+  if (poolCount > 0) {
+    const smallest = positions.reduce((a,b) => a.capitalUSD < b.capitalUSD ? a : b);
+    const poolPay  = Math.min(smallest.capitalUSD + smallest.feeUSD, aave.totalDebtUSD);
+    const hf       = calcHF(poolPay);
+    const closesLast = poolCount === 1;
+    scenarios.push({
+      title: `Fechar pool #${smallest.id} e pagar`,
+      desc: `Use ${f$(poolPay,2)} da menor pool. ${closesLast ? '⚠️ Fecha única pool ativa.' : 'Outras pools permanecem.'}`,
+      hf, score: scoreIt(hf, true, !closesLast, false, false, true)
+    });
+  } else {
+    scenarios.push({
+      title: 'Fechar pool (sem posições)',
+      desc: 'Nenhuma pool ativa para fechar no momento.',
+      hf: aave.healthFactor,
+      score: scoreIt(aave.healthFactor, true, false, false, false, false), disabled: true
+    });
+  }
+
+  // D: Aguardar acumulação
+  {
+    const hf = aave.healthFactor;
+    scenarios.push({
+      title: 'Aguardar acumulação de fees',
+      desc: `HF atual ${hf.toFixed(2)}. Fees geram ~${f$(dailyCost*30,2)}/mês. Aja quando HF < 2.0.`,
+      hf, score: scoreIt(hf, true, poolCount > 0, false, false, false)
+    });
+  }
+
+  // E: Vender WBTC (último recurso)
+  {
+    const targetHF = 2.5;
+    let needSell = 0;
+    if (aave.healthFactor < targetHF) {
+      needSell = Math.max(0, (targetHF * aave.totalDebtUSD - aave.totalCollateralUSD * impliedLT) / (targetHF - impliedLT));
+    }
+    const hf = needSell > 0 ? calcHFSell(needSell) : aave.healthFactor;
+    scenarios.push({
+      title: 'Vender WBTC (último recurso)',
+      desc: needSell > 0
+        ? `Venda ${f$(needSell,2)} em WBTC para HF 2.5. ⚠️ Contra estratégia Montinho→Montão.`
+        : `HF já suficiente. Venda de WBTC totalmente desnecessária — preserve seu Bitcoin.`,
+      hf, score: scoreIt(hf, false, poolCount > 0, false, true, false), disabled: needSell <= 0
+    });
+  }
+
+  return scenarios.sort((a,b) => b.score - a.score).slice(0, 5);
+}
+
+function buildSmartHTML(aaveSt, poolSt, walletSt, summaryItems, nextAct) {
+  const naCs = nextAct.urgency === 'urgent' ? 'card-urgent' : nextAct.urgency === 'warn' ? 'card-warn' : 'card-ok';
+  return `
+    <div class="card" style="flex:1;min-width:260px;padding:14px 16px">
+      <div style="display:flex;gap:18px;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:11px">${semaphoreEmoji(aaveSt)} <span style="color:var(--dim)">Aave</span></span>
+        <span style="font-size:11px">${semaphoreEmoji(poolSt)} <span style="color:var(--dim)">Pools</span></span>
+        <span style="font-size:11px">${semaphoreEmoji(walletSt)} <span style="color:var(--dim)">Wallet</span></span>
+      </div>
+      ${summaryItems.map(i => `<div style="font-size:11px;color:var(--text);line-height:1.7;padding:3px 0;border-bottom:1px solid var(--border)">${i}</div>`).join('')}
+      ${cardFoot('Resumo inteligente · ' + fTime())}
+    </div>
+    <div class="card ${naCs}" style="min-width:220px;max-width:320px;padding:14px 16px">
+      <div style="font-size:10px;color:var(--dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px">Próxima Ação</div>
+      <div style="font-size:14px;font-weight:600;color:var(--bright);margin-bottom:6px">${nextAct.icon} ${nextAct.title}</div>
+      <div style="font-size:11px;color:var(--dim);line-height:1.6;margin-bottom:10px">${nextAct.desc}</div>
+      ${nextAct.href ? `<a href="${nextAct.href}" target="_blank" style="display:inline-block;padding:5px 14px;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;font-size:11px;color:var(--blue);text-decoration:none">${nextAct.btn}</a>` : ''}
+      ${cardFoot('Baseado nos dados mais recentes')}
+    </div>`;
+}
+
+// ── Render: Overview ──────────────────────────────────────────────────────────
+function renderOverview(prices, gas, positions, aave, totalCap, totalFees, wallet, total) {
+  const net        = aave ? aave.totalCollateralUSD - aave.totalDebtUSD : 0;
+  const walletUSD  = wallet ? wallet.totalUSD : 0;
+  const nPos       = positions.length;
+  const walletToks = wallet ? Object.keys(wallet.balances).join(' · ') : '';
+  const gasCs      = gasStatusClass(gas.gwei);
+  const hfCs       = aave ? hfStatusClass(aave.healthFactor) : '';
+  const dailyCostOv = aave ? calcDailyDebtCost(aave.debtsByToken, prices.btc) : 0;
+  const suggestOv   = aave ? calcPaymentSuggestions(aave, totalFees, dailyCostOv, prices.btc) : null;
+  const aaveSt     = aaveStatus(aave);
+  const poolSt     = poolStatus(positions);
+  const walletSt   = walletStatus(wallet, total);
+  const summaryItems = generateSummary(prices, gas, positions, aave, totalFees, suggestOv);
+  const nextAct    = getNextAction(prices, gas, positions, aave, totalFees, suggestOv);
+
+  // Update-in-place on subsequent renders (no DOM flash)
+  if (_loaded.ov) {
+    const $ = id => document.getElementById(id);
+    const set = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
+    const sty = (id, prop, val) => { const el = $(id); if (el) el.style[prop] = val; };
+    const setCs = (id, ...cs) => {
+      const el = $(id); if (!el) return;
+      el.classList.remove('card-ok', 'card-warn', 'card-urgent');
+      cs.forEach(c => c && el.classList.add(c));
+    };
+
+    set('ov-btc',        f$(prices.btc, 0));
+    set('ov-eth',        f$(prices.eth, 2));
+    set('ov-gas',        `${gas.gwei.toFixed(1)} Gwei`);
+    set('ov-gas-sub',    `${gas.label} · collect ≈ ${f$(gas.collectCostUSD)}`);
+    set('ov-total',      f$(total));
+    set('ov-cap',        f$(totalCap));
+    set('ov-cap-sub',    `${nPos} posição${nPos !== 1 ? 'ões' : ''} ativa${nPos !== 1 ? 's' : ''}`);
+    set('ov-fees',       f$(totalFees, 4));
+    set('ov-wallet',     f$(walletUSD));
+    set('ov-wallet-sub', walletToks || 'Tokens na carteira');
+
+    sty('ov-gas', 'color', gas.color);
+    setCs('ov-card-mkt', gasCs);
+
+    if (aave) {
+      set('ov-hf',   aave.healthFactor.toFixed(3));
+      set('ov-ltv',  fPct(aave.ltv));
+      set('ov-debt', f$(aave.totalDebtUSD));
+      set('ov-col',  f$(aave.totalCollateralUSD));
+      set('ov-net',  f$(net));
+      sty('ov-hf',  'color', hfColor(aave.healthFactor));
+      sty('ov-net', 'color', net >= 0 ? 'var(--green)' : 'var(--red)');
+      setCs('ov-card-health', hfCs);
+    }
+    // Atualiza resumo inteligente a cada render
+    const smartEl = document.getElementById('ov-smart-section');
+    if (smartEl) smartEl.innerHTML = buildSmartHTML(aaveSt, poolSt, walletSt, summaryItems, nextAct);
+    return;
+  }
+
+  // First render: build full HTML with stable IDs
+  document.getElementById('ov-body').innerHTML = `
+    <div class="sec-head" style="margin-top:0">Visão Geral</div>
+    <div id="ov-smart-section" style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      ${buildSmartHTML(aaveSt, poolSt, walletSt, summaryItems, nextAct)}
+    </div>
+    <div class="sec-head">Mercado</div>
+    <div class="card ${gasCs} mb16" id="ov-card-mkt">
+      <div class="g3">
+        <div class="metric">
+          <div class="mlabel">${tip('BTC / USD', 'Preço do Bitcoin em dólares. Lido diretamente do feed Chainlink on-chain a cada atualização.')}</div>
+          <div class="mval c-yellow" id="ov-btc">${f$(prices.btc, 0)}</div>
+          <div class="msub">Chainlink on-chain</div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">${tip('ETH / USD', 'Preço do Ethereum em dólares. Usado para estimar o custo de transações (collect, rebalance).')}</div>
+          <div class="mval c-blue" id="ov-eth">${f$(prices.eth, 2)}</div>
+          <div class="msub">Chainlink on-chain</div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">${tip('Gas', 'Custo atual de transação na Ethereum. Verde &lt;20 Gwei · Amarelo 20–50 · Vermelho &gt;50 Gwei.')}</div>
+          <div class="mval" id="ov-gas" style="color:${gas.color}">${gas.gwei.toFixed(1)} Gwei</div>
+          <div class="msub" id="ov-gas-sub">${gas.label} &middot; collect ≈ ${f$(gas.collectCostUSD)}</div>
+        </div>
+      </div>
+      ${cardFoot('Chainlink on-chain', fTime())}
+    </div>
+
+    <div class="sec-head">Minha Posição</div>
+    <div class="card mb16">
+      <div class="g4">
+        <div class="metric">
+          <div class="mlabel">${tip('Portfólio Total', 'Soma de: capital LP + fees acumuladas + Aave net (colateral − dívida) + tokens na wallet.')}</div>
+          <div class="mval c-green" id="ov-total">${f$(total)}</div>
+          <div class="msub">LP + fees + Aave + wallet</div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">${tip('Capital em Pools', 'Valor atual de WBTC + stablecoins nas posições Uniswap v3 ativas — exclui fees acumuladas.')}</div>
+          <div class="mval" id="ov-cap">${f$(totalCap)}</div>
+          <div class="msub" id="ov-cap-sub">${nPos} posição${nPos !== 1 ? 'ões' : ''} ativa${nPos !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="metric metric-ok">
+          <div class="mlabel">${tip('Fees Acumuladas', 'Fees geradas por swaps no pool. Prontas para collect — não sofrem impermanent loss ao retirar.')}</div>
+          <div class="mval c-green" id="ov-fees">${f$(totalFees, 4)}</div>
+          <div class="msub">Pronto para coletar</div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">${tip('Wallet', 'Saldo de tokens fora dos protocolos: BTC, ETH, stablecoins livres na carteira.')}</div>
+          <div class="mval c-blue" id="ov-wallet">${f$(walletUSD)}</div>
+          <div class="msub" id="ov-wallet-sub">${walletToks || 'Tokens na carteira'}</div>
+        </div>
+      </div>
+      ${cardFoot('Uniswap v3 · Chainlink on-chain')}
+    </div>
+
+    ${aave ? `
+    <div class="sec-head">Saúde da Posição</div>
+    <div class="card ${hfCs} mb16" id="ov-card-health">
+      <div class="g4">
+        <div class="metric ${hfCs.replace('card-', 'metric-')}">
+          <div class="mlabel">${tip('Health Factor', '(Colateral × Liquidation Threshold) ÷ Dívida. Abaixo de 1.0 = liquidação automática do colateral.')}</div>
+          <div class="mval" id="ov-hf" style="color:${hfColor(aave.healthFactor)}">${aave.healthFactor.toFixed(3)}</div>
+          <div class="msub">${aave.healthFactor >= 2 ? 'Zona segura' : aave.healthFactor >= 1.5 ? '⚠ Atenção' : '⚠ RISCO!'}</div>
+        </div>
+        <div class="metric ${ltvStatusClass(aave.ltv)}">
+          <div class="mlabel">${tip('LTV Atual', 'Loan-to-Value: dívida ÷ colateral. Ideal 30–40% para WBTC. Acima de 60% = zona de risco elevado.')}</div>
+          <div class="mval" id="ov-ltv">${fPct(aave.ltv)}</div>
+          <div class="msub">Ideal: 30–40%</div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">${tip('Dívida Total', 'Total de stablecoins e tokens emprestados no Aave v3, convertido em USD.')}</div>
+          <div class="mval c-red" id="ov-debt">${f$(aave.totalDebtUSD)}</div>
+          <div class="msub">Colateral: <span id="ov-col">${f$(aave.totalCollateralUSD)}</span></div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">${tip('Aave Net', 'Colateral depositado menos dívida total. Capital líquido efetivo no protocolo Aave v3.')}</div>
+          <div class="mval" id="ov-net" style="color:${net >= 0 ? 'var(--green)' : 'var(--red)'}">${f$(net)}</div>
+          <div class="msub">Colateral − dívida</div>
+        </div>
+      </div>
+      ${cardFoot('Aave v3 on-chain')}
+    </div>` : ''}
+  `;
+  showBody('ov');
+  _loaded.ov = true;
+}
+
+// ── Render: Pool ──────────────────────────────────────────────────────────────
+function poolOutRangeAlert(p) {
+  if (p.inRange) return '';
+  const ts    = _outRangeSince[p.id];
+  const since = ts ? ` desde ${new Date(ts).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}` : '';
+  let detail  = '';
+  if (p.currentUSD < p.floorUSD) {
+    const gap     = p.floorUSD - p.currentUSD;
+    const gapPct  = (gap / p.floorUSD  * 100).toFixed(1);
+    const risePct = (gap / p.currentUSD * 100).toFixed(1);
+    detail = `Preço atual <b>${f$(p.currentUSD,0)}</b> abaixo do piso <b>${f$(p.floorUSD,0)}</b> ` +
+             `(-${f$(gap,0)} / -${gapPct}%)<br>` +
+             `Para reativar: BTC precisa subir para <b>${f$(p.floorUSD,0)}</b> (+${risePct}%)`;
+  } else {
+    const gap     = p.currentUSD - p.ceilUSD;
+    const gapPct  = (gap / p.ceilUSD   * 100).toFixed(1);
+    const fallPct = (gap / p.currentUSD * 100).toFixed(1);
+    detail = `Preço atual <b>${f$(p.currentUSD,0)}</b> acima do teto <b>${f$(p.ceilUSD,0)}</b> ` +
+             `(+${f$(gap,0)} / +${gapPct}%)<br>` +
+             `Para reativar: BTC precisa cair para <b>${f$(p.ceilUSD,0)}</b> (-${fallPct}%)`;
+  }
+  return `
+    <div style="background:rgba(245,197,24,.07);border:1px solid rgba(245,197,24,.45);border-radius:6px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--yellow);margin-bottom:7px">⚠️ Pool #${p.id} fora do range${since} — fees pausadas</div>
+      <div style="font-size:11px;color:var(--text);line-height:1.9">${detail}</div>
+    </div>`;
+}
+
+function renderPool(positions, prices) {
+  if (positions.length === 0) {
+    document.getElementById('pool-body').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">🏊</div><div class="empty-title">Sem posições LP ativas</div><div class="empty-desc">Nenhuma posição Uniswap v3 encontrada para esta carteira.<br><a href="https://app.uniswap.org/pool" target="_blank">Criar posição ↗</a></div></div>`;
+    showBody('pool');
+    _loaded.pool = true;
+    return;
+  }
+
+  document.getElementById('pool-body').innerHTML = positions.map(p => {
+    const pad  = (p.ceilUSD - p.floorUSD) * 0.1;
+    const tMin = p.floorUSD - pad;
+    const tMax = p.ceilUSD  + pad;
+    const rng  = tMax - tMin || 1;
+    const lPct = Math.max(0, (p.floorUSD  - tMin) / rng * 100);
+    const rPct = Math.min(100, (p.ceilUSD - tMin) / rng * 100);
+    const cPct = Math.min(100, Math.max(0, (p.currentUSD - tMin) / rng * 100));
+
+    return `
+    <div class="card ${p.inRange ? 'card-ok' : 'card-warn'}">
+      <div class="pos-head">
+        <div>
+          <span class="pos-id">#${p.id}</span>
+          <span class="pos-sub"> &middot; ${p.label}</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${p.inRange
+            ? '<span class="badge bg">IN RANGE</span>'
+            : '<span class="badge br">OUT OF RANGE</span>'}
+        </div>
+      </div>
+
+      ${poolOutRangeAlert(p)}
+
+      <div class="g2 mb12">
+        <div>
+          <div class="ctitle">Capital</div>
+          <table>
+            <tr><th>Token</th><th class="tar">Qtde</th><th class="tar">USD</th></tr>
+            <tr>
+              <td class="c-yellow">${p.token0.sym}</td>
+              <td class="tar">${fN(p.amount0, p.token0.dec <= 8 ? 6 : 4)}</td>
+              <td class="tar">${f$(p.amount0 * p.token0.price)}</td>
+            </tr>
+            <tr>
+              <td class="c-blue">${p.token1.sym}</td>
+              <td class="tar">${fN(p.amount1, p.token1.dec <= 6 ? 2 : 4)}</td>
+              <td class="tar">${f$(p.amount1 * p.token1.price)}</td>
+            </tr>
+            <tr>
+              <td colspan="2" class="c-dim">Total</td>
+              <td class="tar"><b class="c-green">${f$(p.capitalUSD)}</b></td>
+            </tr>
+          </table>
+        </div>
+        <div>
+          <div class="ctitle" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Fees Acumuladas</span>
+            <a href="https://revert.finance/#/uniswap-v3/ethereum/${WALLET_ADDRESS}"
+               target="_blank" style="font-size:10px;font-weight:normal;color:var(--blue)">
+              Revert ↗
+            </a>
+          </div>
+          <table>
+            <tr>
+              <th>Token</th>
+              <th class="tar" title="Acumuladas no pool (feeGrowthInside)">Pool</th>
+              <th class="tar" title="Tombadas no NFT (tokensOwed)">NFT</th>
+              <th class="tar">USD</th>
+            </tr>
+            <tr>
+              <td class="c-yellow">${p.token0.sym}</td>
+              <td class="tar c-dim">${fN(p.earned0 ?? p.fee0, p.token0.dec <= 8 ? 8 : 6)}</td>
+              <td class="tar c-green">${fN(p.owed0 ?? 0, p.token0.dec <= 8 ? 8 : 6)}</td>
+              <td class="tar">${f$(p.fee0 * p.token0.price)}</td>
+            </tr>
+            <tr>
+              <td class="c-blue">${p.token1.sym}</td>
+              <td class="tar c-dim">${fN(p.earned1 ?? p.fee1, 4)}</td>
+              <td class="tar c-green">${fN(p.owed1 ?? 0, 4)}</td>
+              <td class="tar">${f$(p.fee1 * p.token1.price)}</td>
+            </tr>
+            <tr>
+              <td colspan="3" class="c-dim">Total</td>
+              <td class="tar"><b class="c-green">${f$(p.feeUSD, 4)}</b></td>
+            </tr>
+          </table>
+          ${!p.inRange ? `<div style="font-size:10px;color:var(--yellow);margin-top:6px">⚠ OUT OF RANGE — posição não gera novas fees</div>` : ''}
+        </div>
+      </div>
+
+      <div class="ctitle">Range de Preço (${p.token0.sym}/${p.token1.sym} em USD)</div>
+      <div class="rbar-wrap">
+        <div class="rbar">
+          <div class="rbar-active" style="left:${lPct}%;width:${rPct-lPct}%"></div>
+          <div class="rbar-cur"    style="left:${cPct}%"></div>
+        </div>
+        <div class="rbar-labels">
+          <span>Floor ${f$(p.floorUSD, 0)}</span>
+          <span style="color:var(--yellow)">Atual ${f$(p.currentUSD, 0)}</span>
+          <span>Ceil ${f$(p.ceilUSD, 0)}</span>
+        </div>
+      </div>
+
+      ${cardFoot(`Uniswap v3 on-chain · <a href="https://app.uniswap.org/pool/${p.id}" target="_blank" style="color:var(--blue)">NFT #${p.id} ↗</a>`, `Fee ${p.feePct}%`)}
+    </div>`;
+  }).join('');
+
+  showBody('pool');
+  _loaded.pool = true;
+}
+
+// ── Render: Aave ──────────────────────────────────────────────────────────────
+function renderAave(aave, dailyCost, suggestions, ltvSt, prices, totalFees, positions = [], wallet = null) {
+  if (!aave) {
+    document.getElementById('aave-body').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">🏦</div><div class="empty-title">Sem posição no Aave</div><div class="empty-desc">Nenhum colateral ou empréstimo encontrado para esta carteira.<br><a href="https://app.aave.com/" target="_blank">Abrir Aave ↗</a></div></div>`;
+    showBody('aave');
+    _loaded.aave = true;
+    return;
+  }
+
+  const hfPct     = Math.min(100, Math.max(0, (aave.healthFactor - 1.0) / 2.0 * 100));
+  const g         = Math.min(92, Math.max(8, hfPct));   // posição clamped na barra (%)
+  const COL       = 10;                                  // threshold de colisão em pontos percentuais
+  const l1B_up    = g < COL || Math.abs(g - 50) < COL;  // label atual sobe na Camada 1
+  const l3B_dn    = g < COL || Math.abs(g - 25) < COL || Math.abs(g - 50) < COL || (92 - g) < COL;
+  const hfCs      = hfStatusClass(aave.healthFactor);
+  const scenarios = generateScenarios(aave, positions, wallet, prices, totalFees, dailyCost);
+
+  // WETH disponível nas pools (para simulador de conversão)
+  const wethPoolUSD = positions.reduce((sum, p) => {
+    let w = 0;
+    if (p.token0?.sym === 'WETH' || p.token0?.sym === 'ETH') w += (p.amount0 || 0) * (p.token0.price || prices.eth || 0);
+    if (p.token1?.sym === 'WETH' || p.token1?.sym === 'ETH') w += (p.amount1 || 0) * (p.token1.price || prices.eth || 0);
+    return sum + w;
+  }, 0);
+
+  // Hero: BTC price risk metrics
+  const impliedLT   = aave.totalCollateralUSD > 0 ? (aave.healthFactor * aave.totalDebtUSD) / aave.totalCollateralUSD : 0.78;
+  const ltDisplay   = impliedLT.toFixed(2);
+  const btcLiq      = prices.btc / aave.healthFactor;
+  const btcSafe     = 2.0 * prices.btc / aave.healthFactor;
+  const dropPct     = ((btcLiq  - prices.btc) / prices.btc * 100).toFixed(1);
+  const dropAbs     = Math.abs((btcLiq - prices.btc) / prices.btc * 100).toFixed(1);
+  const safePct     = Math.abs((btcSafe - prices.btc) / prices.btc * 100).toFixed(1);
+  const alreadySafe = aave.healthFactor >= 2.0;
+  const _rMin  = btcLiq  * 0.75;
+  const _rMax  = Math.max(btcSafe, prices.btc) * 1.3;
+  const _rSpan = _rMax - _rMin;
+  const toR    = p => Math.max(2, Math.min(97, (p - _rMin) / _rSpan * 100)).toFixed(1);
+  const liqR   = toR(btcLiq);
+  const safeR  = toR(btcSafe);
+  const curR   = toR(prices.btc);
+
+  // Expõe dados para o slider interativo
+  window._aaveSliderData = {
+    totalCollateralUSD: aave.totalCollateralUSD,
+    totalDebtUSD:       aave.totalDebtUSD,
+    impliedLT:          impliedLT,
+    wethPoolUSD:        wethPoolUSD,
+    positions:          positions,
+  };
+
+  // ── Simulador por pool: HTML gerado dinamicamente (N pools) ────────────────
+  const _simStables  = ['USDT','USDC','DAI','USDe','mUSD'];
+  const poolSimHTML  = (() => {
+    if (!positions.length) return '';
+    let h = `<div class="sec-head">Simulador — Capital das Pools</div><div class="card">`;
+    h += `<div class="ctitle" style="margin-bottom:14px">Simule o impacto de usar tokens de cada pool na posição Aave</div>`;
+    for (const p of positions) {
+      const toks = [
+        { sym: p.token0.sym, amount: p.amount0, price: p.token0.price, idx: 0 },
+        { sym: p.token1.sym, amount: p.amount1, price: p.token1.price, idx: 1 },
+      ].filter(t => t.amount * t.price > 0.01);
+      if (!toks.length) continue;
+      h += `<div style="padding:10px 0;border-bottom:1px solid var(--border)">`;
+      h += `<div style="font-size:10px;color:var(--dim);letter-spacing:1px;margin-bottom:10px">Pool <b style="color:var(--blue)">#${p.id}</b> · ${p.label}${!p.inRange ? ' <span class="badge by" style="font-size:9px">OUT OF RANGE</span>' : ''}</div>`;
+      for (const t of toks) {
+        const usd    = t.amount * t.price;
+        const key    = `${p.id}_${t.idx}`;
+        const defOpt = _simStables.includes(t.sym) ? 'debt' : 'collateral';
+        const st     = window._poolSim[key] || {};
+        const curOpt = st.option || defOpt;
+        const curPct = st.pct    || 0;
+        const bC = curOpt === 'collateral', bD = curOpt === 'debt';
+        h += `<div style="margin-bottom:12px;padding-left:8px;border-left:2px solid var(--border2)">`;
+        h += `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">`;
+        h += `<span style="font-size:11px;font-weight:600;color:var(--text)">${t.sym} <span class="c-dim" style="font-weight:normal">${f$(usd)}</span></span>`;
+        h += `<div style="display:flex;gap:4px;flex-shrink:0">`;
+        h += `<button data-opt-key="${key}" data-opt="collateral" onclick="window.simSetOption(${p.id},${t.idx},'collateral')" style="font-size:10px;padding:3px 9px;border:1px solid var(--border2);border-radius:3px;cursor:pointer;background:${bC?'var(--blue)':'var(--surface2)'};color:${bC?'#fff':'var(--dim)'}">Colateral</button>`;
+        h += `<button data-opt-key="${key}" data-opt="debt" onclick="window.simSetOption(${p.id},${t.idx},'debt')" style="font-size:10px;padding:3px 9px;border:1px solid var(--border2);border-radius:3px;cursor:pointer;background:${bD?'#22c55e':'var(--surface2)'};color:${bD?'#fff':'var(--dim)'}">Pagar dívida</button>`;
+        h += `</div></div>`;
+        h += `<div style="display:flex;justify-content:space-between;font-size:9px;color:var(--dim);margin-bottom:4px"><span>0%</span><b id="sim-pct-${key}" style="color:var(--text)">${curPct}%</b><span>100%</span></div>`;
+        h += `<input type="range" min="0" max="100" step="1" value="${curPct}" style="width:100%;accent-color:var(--blue);cursor:pointer" oninput="window.simUpdate(${p.id},${t.idx},+this.value)">`;
+        h += `<div id="sim-res-${key}" style="border:1px solid var(--border);border-radius:4px;padding:8px 11px;min-height:36px;background:var(--surface2);margin-top:6px;transition:background .2s,border-color .2s"><span style="color:#888;font-size:10px">Mova o slider para simular</span></div>`;
+        h += `</div>`;
+      }
+      h += `</div>`;
+    }
+    h += cardFoot('Simulação — não executa transações reais') + `</div>`;
+    return h;
+  })();
+
+  const ALWAYS_SHOW = new Set(['mUSD']);
+  const debtRows = Object.entries(aave.debtsByToken)
+    .filter(([sym, v]) => v > 0.0001 || ALWAYS_SHOW.has(sym))
+    .map(([sym, amt]) => {
+      const apy = AAVE_DEBT_APYS[sym] ?? 5;
+      const usd = sym === 'WBTC' ? amt * prices.btc : amt;
+      const day = usd * (apy / 100 / 365);
+      const noData = amt < 0.0001;
+      return `<tr${noData ? ' style="opacity:.55"' : ''}>
+        <td class="c-yellow">${sym}${noData ? ' <span style="font-size:9px;color:var(--red)">(sem leitura)</span>' : ''}</td>
+        <td class="tar">${noData ? '<span class="c-dim">?</span>' : fN(amt, sym === 'WBTC' ? 8 : 2)}</td>
+        <td class="tar">${noData ? '<span class="c-dim">?</span>' : f$(usd)}</td>
+        <td class="tar c-dim">${apy}%</td>
+        <td class="tar c-orange">${noData ? '<span class="c-dim">?</span>' : f$(day, 4)}</td>
+      </tr>`;
+    }).join('');
+
+  document.getElementById('aave-body').innerHTML = `
+    <div class="sec-head" style="margin-top:0">Resumo</div>
+    <div class="card ${hfCs} mb16">
+      <div class="g4 mb16">
+        <div class="metric">
+          <div class="mlabel">${tip('Colateral', 'WBTC depositado no Aave v3 como garantia para os empréstimos.')}</div>
+          <div class="mval">${f$(aave.totalCollateralUSD)}</div>
+          <div class="msub">WBTC depositado</div>
+        </div>
+        <div class="metric metric-urgent">
+          <div class="mlabel">${tip('Dívida Total', 'Stablecoins e tokens emprestados. Juros correm diariamente sobre esse valor.')}</div>
+          <div class="mval c-red">${f$(aave.totalDebtUSD)}</div>
+          <div class="msub">Emprestado</div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">${tip('Disponível', 'Quanto ainda pode ser emprestado sem ultrapassar o LTV máximo permitido pelo Aave.')}</div>
+          <div class="mval c-blue">${f$(aave.availableBorrowUSD)}</div>
+          <div class="msub">Pode emprestar mais</div>
+        </div>
+        <div class="metric metric-warn">
+          <div class="mlabel">${tip('Custo / Dia', 'Juros diários totais sobre todas as dívidas, calculado pelos APYs vigentes.')}</div>
+          <div class="mval c-orange">${f$(dailyCost, 4)}</div>
+          <div class="msub">${f$(dailyCost * 30)}/mês em juros</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <span class="mlabel">${tip('Health Factor', '(Colateral × Threshold) ÷ Dívida. Abaixo de 1.0 = liquidação automática. Ideal manter acima de 2.0.')}</span>
+          <span style="font-size:22px;font-weight:600;color:${hfColor(aave.healthFactor)}">${aave.healthFactor.toFixed(3)}</span>
+        </div>
+
+        <!-- Gauge HF: 3 camadas — preços BTC / barra gradiente / escala HF -->
+        <div style="margin:8px 0 16px;position:relative">
+
+          <!-- Camada 1 (topo): preços BTC — label atual sobe (top:-18px) quando colide -->
+          <div style="position:relative;height:20px;overflow:visible;margin-bottom:5px;font-size:9px">
+            <span style="position:absolute;left:0;top:0;color:var(--red);white-space:nowrap">${f$(btcLiq,0)}</span>
+            <span style="position:absolute;left:${g}%;transform:translateX(-50%);top:${l1B_up ? -18 : 0}px;color:var(--yellow);font-weight:700;white-space:nowrap">${f$(prices.btc,0)}</span>
+            <span class="hf-mid-label" style="position:absolute;left:50%;transform:translateX(-50%);top:0;color:var(--blue);white-space:nowrap">${f$(btcSafe,0)}</span>
+          </div>
+
+          <!-- Camada 2 (meio): barra gradiente + marcadores + seta -->
+          <div style="position:relative;height:14px;overflow:visible">
+            <div style="position:absolute;inset:0;border-radius:7px;background:linear-gradient(to right,var(--red) 0%,#ff6b35 18%,var(--yellow) 40%,var(--blue) 68%,var(--green) 100%);opacity:.82"></div>
+            <div style="position:absolute;left:0;top:-3px;bottom:-3px;width:2px;background:rgba(255,255,255,.85);border-radius:1px"></div>
+            <div class="hf-mid-label" style="position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;background:rgba(255,255,255,.4);border-radius:1px"></div>
+            <div style="position:absolute;left:${g}%;top:-7px;transform:translateX(-50%);color:var(--yellow);font-size:14px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7))">▼</div>
+          </div>
+
+          <!-- Camada 3 (baixo): escala HF — "atual" desce (bottom:-18px) quando colide -->
+          <div style="position:relative;height:20px;overflow:visible;margin-top:4px;font-size:9px">
+            <span style="position:absolute;left:0;top:2px;color:var(--red)">1.0</span>
+            <span class="hf-mid-label" style="position:absolute;left:25%;transform:translateX(-50%);top:2px;color:var(--dim)">1.5</span>
+            <span style="position:absolute;left:${g}%;transform:translateX(-50%);${l3B_dn ? 'bottom:-18px' : 'top:2px'};color:var(--yellow);font-weight:700;white-space:nowrap">atual=${aave.healthFactor.toFixed(2)}</span>
+            <span class="hf-mid-label" style="position:absolute;left:50%;transform:translateX(-50%);top:2px;color:var(--blue)">2.0</span>
+            <span style="position:absolute;right:0;top:2px;color:var(--green)">3.0+</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="background:var(--surface2);border:1px solid ${ltvSt.color};border-radius:var(--r);padding:11px 13px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:${ltvSt.color};font-weight:600;font-size:12px">${ltvSt.zone}</span>
+          <span class="c-dim" style="font-size:11px">LTV ${aave.ltv.toFixed(1)}%</span>
+        </div>
+        <div style="font-size:11px;color:var(--dim);margin-top:4px">${ltvSt.action}</div>
+      </div>
+
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:11px 13px;margin-top:12px">
+        <div style="font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:9px">Fórmula do Health Factor</div>
+        <div style="font-size:11px;color:var(--dim);line-height:2.2">
+          ${tip('HF', 'Health Factor: mede a segurança da posição. Abaixo de 1.0 ocorre liquidação automática. Ideal manter acima de 2.0.')} =
+          ( ${tip('Colateral USD', 'WBTC depositado como garantia no Aave v3, convertido em USD usando o preço atual do BTC via Chainlink.')} ×
+          ${tip(ltDisplay, 'Liquidation Threshold do WBTC no Aave v3: ' + (impliedLT*100).toFixed(0) + '%. Percentual do colateral reconhecido como garantia efetiva. Definido pelo protocolo — não muda.')} ) ÷
+          ${tip('Dívida USD', 'Total de stablecoins e tokens emprestados. Juros acumulam diariamente sobre este valor.')}
+        </div>
+        <div style="font-family:monospace;font-size:12px;color:var(--text);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);line-height:1.8">
+          = ( <b>${f$(aave.totalCollateralUSD)}</b> × <b>${ltDisplay}</b> ) ÷ <b>${f$(aave.totalDebtUSD)}</b>
+          = <b style="font-size:14px;color:${hfColor(aave.healthFactor)}">${aave.healthFactor.toFixed(2)}</b>
+        </div>
+      </div>
+      ${cardFoot('Aave v3 on-chain')}
+    </div>
+
+    <div class="sec-head">Dívidas</div>
+    <div class="card mb16">
+      <div class="ctitle">Por Token</div>
+      <table>
+        <tr>
+          <th>Token</th>
+          <th class="tar">Quantidade</th>
+          <th class="tar">USD</th>
+          <th class="tar">${tip('APY', 'Taxa anual de juros do empréstimo. Pode variar conforme a utilização do pool no Aave.')}</th>
+          <th class="tar">Custo/dia</th>
+        </tr>
+        ${debtRows}
+        <tr>
+          <td colspan="4" class="c-dim">Total juros diários</td>
+          <td class="tar"><b class="c-orange">${f$(dailyCost, 4)}</b></td>
+        </tr>
+      </table>
+      ${cardFoot('Aave v3 on-chain', `${f$(dailyCost * 30)}/mês`)}
+    </div>
+
+    ${suggestions ? `
+    <div class="sec-head">Ações Recomendadas</div>
+    <div class="card">
+      <div style="background:rgba(59,158,255,.07);border:1px solid rgba(59,158,255,.2);border-radius:4px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:var(--blue)">
+        ₿ <b>Montinho→Montão:</b> pague a dívida com <b>fees acumuladas e stablecoins</b> — preserve seu WBTC.
+      </div>
+      <div class="ctitle">Sugestões de Pagamento</div>
+      <div class="sug">
+        <div class="sug-head">
+          <span class="sug-label">${tip('Mínimo — só juros', 'Paga apenas os juros do dia com stablecoins da wallet. WBTC intocado.')}</span>
+          <span class="sug-val">${f$(suggestions.minimum.value, 4)}</span>
+        </div>
+        <div class="sug-desc">${suggestions.minimum.description} <span style="color:var(--green);font-size:10px">✓ Use stables</span></div>
+      </div>
+      <div class="sug">
+        <div class="sug-head">
+          <span class="sug-label">${tip('Recomendado — LTV 35%', 'Use fees acumuladas + stables para chegar ao LTV ideal. Health Factor > 2.0.')}</span>
+          <span class="sug-val">${f$(suggestions.medium.value)}</span>
+        </div>
+        <div class="sug-desc">${suggestions.medium.description} <span style="color:var(--green);font-size:10px">✓ Use fees + stables</span></div>
+      </div>
+      <div class="sug">
+        <div class="sug-head">
+          <span class="sug-label">${tip('Agressivo — usar todas as fees', 'Coleta e usa 100% das fees dos pools. Máxima redução de dívida sem vender WBTC.')}</span>
+          <span class="sug-val">${f$(suggestions.aggressive.value)}</span>
+        </div>
+        <div class="sug-desc">${suggestions.aggressive.description} <span style="color:var(--yellow);font-size:10px">⚡ Todas as fees</span></div>
+      </div>
+      ${cardFoot('Aave v3 · Estratégia: preserve WBTC')}
+    </div>` : ''}
+
+    ${scenarios.length ? `
+    <div class="sec-head">Ranking de Cenários</div>
+    <div class="card">
+      <div class="ctitle" style="margin-bottom:12px">Melhores estratégias agora — rankeadas automaticamente</div>
+      ${scenarios.map((sc, i) => {
+        const medals     = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+        const scoreColor = sc.score >= 7 ? 'var(--green)' : sc.score >= 4 ? 'var(--yellow)' : 'var(--red)';
+        const hfCol      = sc.hf > 2.0 ? 'var(--green)' : sc.hf > 1.5 ? 'var(--yellow)' : 'var(--red)';
+        const dimRow     = sc.disabled ? 'opacity:.5;' : '';
+        return `<div style="${dimRow}display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:18px;min-width:26px;line-height:1.2">${medals[i]}</span>
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+              <span style="font-size:12px;font-weight:600;color:var(--text)">${sc.title}</span>
+              <span style="font-size:12px;font-weight:700;color:${scoreColor};flex-shrink:0">${sc.score > 0 ? '+' : ''}${sc.score}</span>
+            </div>
+            <div style="font-size:10px;color:var(--dim);margin-top:3px;line-height:1.5">${sc.desc}</div>
+            <div style="font-size:10px;margin-top:3px">HF resultante: <b style="color:${hfCol}">${sc.hf.toFixed(2)}</b></div>
+          </div>
+        </div>`;
+      }).join('')}
+      ${cardFoot('Ranking auto-atualizado · Pontuação: HF/WBTC/Pool/Recurso')}
+    </div>` : ''}
+
+    ${poolSimHTML}
+
+    <div class="sec-head">Simulador — Converter WETH das Pools</div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:6px">
+        <div class="ctitle" style="margin:0">Quanto WETH converter para pagar dívida?</div>
+        <div style="font-size:11px;color:var(--dim)">
+          ${wethPoolUSD > 0
+            ? `Disponível nas pools: <b style="color:var(--green)">${f$(wethPoolUSD, 2)}</b>`
+            : '<span style="color:var(--yellow)">⚠ Sem WETH/ETH detectado nas pools</span>'}
+        </div>
+      </div>
+
+      ${wethPoolUSD > 0 ? `
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--dim);margin-bottom:6px">
+          <span>0% — não converte</span>
+          <b id="weth-slider-pct" style="font-size:12px;color:var(--text)">${window._wethPct || 0}%</b>
+          <span>100% — tudo</span>
+        </div>
+        <input type="range" min="0" max="100" step="1" value="${window._wethPct || 0}"
+          style="width:100%;accent-color:var(--blue);cursor:pointer"
+          oninput="window.calcWethConvert(+this.value)">
+      </div>
+      <div id="weth-slider-result"
+        style="border:1px solid var(--border);border-radius:5px;padding:11px 13px;min-height:46px;background:var(--surface2);transition:background .25s,border-color .25s">
+        <span style="color:var(--dim);font-size:11px">Mova o slider para simular a conversão</span>
+      </div>` : `
+      <div style="font-size:11px;color:var(--dim);padding:6px 0;line-height:1.7">
+        Nenhum WETH/ETH encontrado nas pools ativas.<br>
+        O simulador fica disponível quando há WETH posicionado nas pools Uniswap v3.
+      </div>`}
+
+      ${cardFoot('Simulação — não executa transações reais')}
+    </div>
+  `;
+
+  // Restaura sliders após re-render
+  if ((window._wethPct || 0) > 0) setTimeout(() => window.calcWethConvert(window._wethPct), 0);
+  Object.entries(window._poolSim).forEach(([key, st]) => {
+    if ((st.pct || 0) > 0) {
+      const [posId, tokenIdx] = key.split('_');
+      setTimeout(() => window.simUpdate(Number(posId), Number(tokenIdx), st.pct), 0);
+    }
+  });
+
+  showBody('aave');
+  _loaded.aave = true;
+}
+
+// ── Render: Wallet ────────────────────────────────────────────────────────────
+function renderWallet(wallet, totalPortfolio) {
+  if (!wallet || Object.keys(wallet.balances).length === 0) {
+    document.getElementById('wallet-body').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">👛</div><div class="empty-title">Carteira vazia</div><div class="empty-desc">Nenhum token ERC-20 relevante encontrado nesta carteira.</div></div>`;
+    showBody('wallet');
+    _loaded.wallet = true;
+    return;
+  }
+
+  // Sort by USD value descending
+  const entries = Object.entries(wallet.balances)
+    .sort((a, b) => b[1].usd - a[1].usd);
+
+  const rows = entries.map(([sym, data]) => {
+    const icon     = tokIcon(sym);
+    const pct      = totalPortfolio > 0 ? data.usd / totalPortfolio * 100 : 0;
+    const unitPrice = data.amount > 0 ? data.usd / data.amount : 0;
+    const priceDec = unitPrice >= 1000 ? 0 : unitPrice >= 1 ? 2 : 6;
+    const amtDec   = ['WBTC','BTC'].includes(sym) ? 8 : ['ETH','WETH'].includes(sym) ? 6 : 4;
+    return `
+      <tr>
+        <td>
+          <div class="tok-cell">
+            <span class="tok-icon ${icon.cls}">${icon.ch}</span>
+            <span style="font-weight:600;color:var(--bright)">${sym}</span>
+          </div>
+        </td>
+        <td class="tar">${fN(data.amount, amtDec)}</td>
+        <td class="tar c-dim">${f$(unitPrice, priceDec)}</td>
+        <td class="tar c-green">${f$(data.usd)}</td>
+        <td class="tar mob-hide">
+          <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+            <div style="width:52px;height:5px;background:var(--border2);border-radius:3px;overflow:hidden">
+              <div style="width:${Math.min(100, pct).toFixed(1)}%;height:100%;background:var(--blue);border-radius:3px"></div>
+            </div>
+            <span class="c-dim" style="font-size:10px;min-width:34px;text-align:right">${pct.toFixed(1)}%</span>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  const barRows = entries.map(([sym, data]) => {
+    const icon  = tokIcon(sym);
+    const pct   = totalPortfolio > 0 ? data.usd / totalPortfolio * 100 : 0;
+    const color = icon.cls === 'btc' ? 'var(--yellow)'
+                : icon.cls === 'eth' ? 'var(--blue)'
+                : 'var(--green)';
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:3px 0">
+      <span class="tok-icon ${icon.cls}" style="width:20px;height:20px;font-size:10px">${icon.ch}</span>
+      <span style="width:44px;font-size:11px;color:var(--text)">${sym}</span>
+      <div style="flex:1;height:7px;background:var(--border2);border-radius:4px;overflow:hidden">
+        <div style="width:${Math.min(100, pct).toFixed(1)}%;height:100%;background:${color};border-radius:4px"></div>
+      </div>
+      <span class="c-dim" style="width:38px;text-align:right;font-size:10px">${pct.toFixed(1)}%</span>
+      <span style="width:72px;text-align:right;font-size:11px">${f$(data.usd)}</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('wallet-body').innerHTML = `
+    <div class="card mb16">
+      <div class="ctitle" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Tokens da Carteira</span>
+        <span style="color:var(--bright);font-weight:600;font-size:13px">${f$(wallet.totalUSD)}</span>
+      </div>
+      <table>
+        <tr>
+          <th>Token</th>
+          <th class="tar">Quantidade</th>
+          <th class="tar">Preço Unit.</th>
+          <th class="tar">Total USD</th>
+          <th class="tar mob-hide">% do Portfólio</th>
+        </tr>
+        ${rows}
+        <tr>
+          <td colspan="3" class="c-dim" style="font-size:10px">Total na Carteira</td>
+          <td class="tar"><b class="c-green">${f$(wallet.totalUSD)}</b></td>
+          <td></td>
+        </tr>
+      </table>
+      ${cardFoot('Ethereum on-chain')}
+    </div>
+
+    <div class="card">
+      <div class="ctitle" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Composição em relação ao Portfólio Total</span>
+        <span class="c-dim" style="font-size:10px;font-weight:normal;text-transform:none;letter-spacing:0">
+          Total: ${f$(totalPortfolio)}
+        </span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        ${barRows}
+      </div>
+      <div style="margin-top:14px;font-size:10px;color:var(--dim);line-height:1.6">
+        Os percentuais são em relação ao portfólio total (LP + Aave net + fees + wallet).
+        Tokens com saldo &lt; 0.0001 não são exibidos.
+      </div>
+      ${cardFoot('Uniswap v3 · Aave v3 · Chainlink on-chain', `Total: ${f$(totalPortfolio)}`)}
+    </div>
+  `;
+  showBody('wallet');
+  _loaded.wallet = true;
+}
+
+// ── Chart helpers ─────────────────────────────────────────────────────────────
+
+function chartSectionHtml() {
+  const periods   = ['30d','7d','3d','1d'];
+  const periodBtns = periods.map(p =>
+    `<button class="cpbtn${_chartPeriod === p ? ' cpbtn-active' : ''}" onclick="setChartPeriod('${p}')">${p}</button>`
+  ).join('');
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:10px;color:var(--dim);letter-spacing:2px;text-transform:uppercase">BTC/USD</span>
+        <span id="chart-legend" style="font-size:10px;color:var(--dim);display:${_chartMode === 'tv' ? 'none' : 'inline'}">
+          <span style="color:var(--yellow)">─ EMA9</span>
+          &nbsp;
+          <span style="color:var(--blue)">── EMA21</span>
+          &nbsp;
+          <span style="color:#00e87a">▲</span>
+          <span style="color:#ff4444">▼</span>
+        </span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="period-btns" style="display:${_chartMode === 'tv' ? 'none' : 'flex'};gap:3px">
+          ${periodBtns}
+        </div>
+        <div style="display:flex;gap:3px">
+          <button class="cmbtn${_chartMode === 'own' ? ' cmbtn-active' : ''}" onclick="setChartMode('own')">Próprio</button>
+          <button class="cmbtn${_chartMode === 'tv'  ? ' cmbtn-active' : ''}" onclick="setChartMode('tv')">TradingView</button>
+        </div>
+      </div>
+    </div>
+    <div id="own-chart-wrap" style="display:${_chartMode === 'tv' ? 'none' : 'block'}">
+      <div id="btc-chart" style="height:320px;border-radius:3px;overflow:hidden"></div>
+    </div>
+    <div id="tv-chart-wrap" style="display:${_chartMode === 'own' ? 'none' : 'block'}">
+      <div id="tradingview-container" style="height:500px;border-radius:3px;overflow:hidden;background:#131722"></div>
+    </div>`;
+}
+
+function analysisHtml(a) {
+  const tColor = a.trend === 'ALTA' ? 'var(--green)' : a.trend === 'BAIXA' ? 'var(--red)' : 'var(--yellow)';
+  const dots   = Array.from({length:4}, (_,i) =>
+    `<span class="sdot2 ${i < a.score ? 'on' : ''}"></span>`).join('');
+  return `
+    <div class="g2 mb16">
+      <div class="card">
+        <div class="ctitle">Sinal de Trade — BTC/USD</div>
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:14px">
+          <div>
+            <div class="mlabel">Preço Atual</div>
+            <div style="font-size:30px;font-weight:600;color:var(--yellow)">${f$(a.price, 0)}</div>
+          </div>
+          <div>
+            <div class="mlabel">Sinal</div>
+            <div style="font-size:18px;margin-top:2px">${sigBadge(a.signal)}</div>
+          </div>
+          <div>
+            <div class="mlabel">Tendência</div>
+            <div style="font-size:15px;font-weight:600;color:${tColor}">${a.trend}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span class="mlabel">Score:</span>
+          <div class="sdots">${dots}</div>
+          <span style="font-size:11px;color:var(--dim)">${a.score}/4</span>
+        </div>
+        <div style="font-size:11px;color:var(--dim)">
+          Risk/Reward: <span class="c-green">${a.rr}:1</span> &middot;
+          MACD histogram: ${a.macd.histogram.toFixed(0)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="ctitle">Indicadores Técnicos</div>
+        <table>
+          <tr><th>Indicador</th><th class="tar">Valor</th><th class="tar">Status</th></tr>
+          <tr>
+            <td>RSI (14)</td><td class="tar">${a.rsi.toFixed(1)}</td>
+            <td class="tar">
+              ${a.rsi > 70 ? '<span class="badge br">SOBRECOMPRADO</span>'
+                : a.rsi < 30 ? '<span class="badge bg">SOBREVENDIDO</span>'
+                : a.rsi > 40 && a.rsi < 65 ? '<span class="badge bg">NEUTRO+</span>'
+                : '<span class="badge by">NEUTRO</span>'}
+            </td>
+          </tr>
+          <tr>
+            <td>EMA 9</td><td class="tar">${f$(a.ema9, 0)}</td>
+            <td class="tar">${a.price > a.ema9 ? '<span class="badge bg">ACIMA</span>' : '<span class="badge br">ABAIXO</span>'}</td>
+          </tr>
+          <tr>
+            <td>EMA 21</td><td class="tar">${f$(a.ema21, 0)}</td>
+            <td class="tar">${a.ema9 > a.ema21 ? '<span class="badge bg">GOLDEN X</span>' : '<span class="badge br">DEATH X</span>'}</td>
+          </tr>
+          <tr>
+            <td>MACD</td><td class="tar">${a.macd.macd.toFixed(0)}</td>
+            <td class="tar">${a.macd.bullish ? '<span class="badge bg">BULLISH</span>' : '<span class="badge br">BEARISH</span>'}</td>
+          </tr>
+          <tr>
+            <td>Bollinger %B</td><td class="tar">${a.bb.percentB.toFixed(1)}%</td>
+            <td class="tar">
+              ${a.bb.percentB > 80 ? '<span class="badge br">TOPO BB</span>'
+                : a.bb.percentB < 20 ? '<span class="badge bg">FUNDO BB</span>'
+                : '<span class="badge by">MEIO</span>'}
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="g3 mb16">
+      <div class="card">
+        <div class="ctitle">Entradas Sugeridas</div>
+        <table>
+          <tr><td class="c-dim">Ideal (EMA 9)</td><td class="tar c-green">${f$(a.entry.ideal, 0)}</td></tr>
+          <tr><td class="c-dim">Agressivo (BB Média)</td><td class="tar">${f$(a.entry.aggressive, 0)}</td></tr>
+          <tr><td class="c-dim">Conservador (BB Inf.)</td><td class="tar">${f$(a.entry.conservative, 0)}</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <div class="ctitle">Take Profit</div>
+        <table>
+          <tr><td class="c-dim">TP1 (+3%)</td><td class="tar c-green">${f$(a.takeProfit.tp1, 0)}</td></tr>
+          <tr><td class="c-dim">TP2 (+6%)</td><td class="tar c-green">${f$(a.takeProfit.tp2, 0)}</td></tr>
+          <tr><td class="c-dim">TP3 (BB Sup.)</td><td class="tar c-green">${f$(a.takeProfit.tp3, 0)}</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <div class="ctitle">Stop Loss</div>
+        <table>
+          <tr><td class="c-dim">Conservador (−3%)</td><td class="tar c-red">${f$(a.stopLoss.conservative, 0)}</td></tr>
+          <tr><td class="c-dim">Técnico (EMA 21)</td><td class="tar c-red">${f$(a.stopLoss.technical, 0)}</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ctitle">Bandas de Bollinger — SMA 20 dias</div>
+      <div class="g4">
+        <div class="metric"><div class="mlabel">Banda Superior</div><div class="mval" style="font-size:16px">${f$(a.bb.upper, 0)}</div></div>
+        <div class="metric"><div class="mlabel">Média (SMA 20)</div><div class="mval" style="font-size:16px">${f$(a.bb.middle, 0)}</div></div>
+        <div class="metric"><div class="mlabel">Banda Inferior</div><div class="mval" style="font-size:16px">${f$(a.bb.lower, 0)}</div></div>
+        <div class="metric">
+          <div class="mlabel">%B (posição)</div>
+          <div class="mval" style="font-size:16px">${a.bb.percentB.toFixed(1)}%</div>
+          <div class="msub">0% = fundo · 100% = topo</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Initialise (or re-init) the LightweightCharts own chart
+function initOwnChart(ohlcData) {
+  if (!ohlcData || ohlcData.length === 0 || !window.LightweightCharts) return;
+  const el = document.getElementById('btc-chart');
+  if (!el) return;
+
+  if (_lwChart) { _lwChart.remove(); _lwChart = null; _lwCandles = null; _lwEma9 = null; _lwEma21 = null; }
+
+  _lwChart = LightweightCharts.createChart(el, {
+    width:  el.clientWidth || 800,
+    height: 320,
+    layout: { background: { type: 'solid', color: '#141414' }, textColor: '#666666' },
+    grid:   { vertLines: { color: '#1e1e1e' }, horzLines: { color: '#1e1e1e' } },
+    timeScale: { borderColor: '#252525', timeVisible: typeof ohlcData[0]?.time === 'number', fixLeftEdge: true, fixRightEdge: true },
+    rightPriceScale: { borderColor: '#252525', scaleMargins: { top: 0.08, bottom: 0.08 } },
+    crosshair: { mode: 1 },
+    handleScroll: false,
+    handleScale:  false,
+  });
+
+  _lwCandles = _lwChart.addCandlestickSeries({
+    upColor: '#00e87a', downColor: '#ff4444', borderVisible: false,
+    wickUpColor: '#00e87a', wickDownColor: '#ff4444',
+  });
+  _lwCandles.setData(ohlcData);
+
+  const closes = ohlcData.map(d => d.close);
+  const e9vals  = calcEMA(closes, 9);
+  const e21vals = calcEMA(closes, 21);
+
+  _lwEma9  = _lwChart.addLineSeries({ color: '#f5c518', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  _lwEma21 = _lwChart.addLineSeries({ color: '#3b9eff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+  _lwEma9.setData( ohlcData.map((d, i) => ({ time: d.time, value: e9vals[i]  })));
+  _lwEma21.setData(ohlcData.map((d, i) => ({ time: d.time, value: e21vals[i] })));
+
+  _lwChart.timeScale().fitContent();
+  new ResizeObserver(() => { if (_lwChart) _lwChart.applyOptions({ width: el.clientWidth }); }).observe(el);
+}
+
+// Load TradingView tv.js lazily and init widget
+async function initTVChart() {
+  const container = document.getElementById('tradingview-container');
+  if (!container) return;
+  if (container === _tvContainerEl) return; // already inited for this container
+
+  container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px"><span class="spin">◌</span> &nbsp;Carregando TradingView…</div>';
+
+  try {
+    if (!window.TradingView) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://s3.tradingview.com/tv.js';
+        s.async = true;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('TradingView script failed'));
+        document.head.appendChild(s);
+      });
+    }
+
+    container.innerHTML = '<div id="tv_btc" style="height:500px;"></div>';
+    new TradingView.widget({
+      autosize:         true,
+      symbol:           'COINBASE:BTCUSD',
+      interval:         'D',
+      timezone:         'America/Sao_Paulo',
+      theme:            'dark',
+      style:            '1',
+      locale:           'pt',
+      enable_publishing: false,
+      hide_top_toolbar: false,
+      save_image:       false,
+      container_id:     'tv_btc',
+      studies: [
+        'MAExp@tv-basicstudies',
+        'RSI@tv-basicstudies',
+        'MACD@tv-basicstudies',
+      ],
+    });
+    _tvContainerEl = container;
+  } catch (err) {
+    container.innerHTML = `<div class="err-box">⚠ TradingView não carregou: ${err.message}</div>`;
+  }
+}
+
+// Chart mode toggle (Próprio ↔ TradingView)
+window.setChartMode = async function(mode) {
+  _chartMode = mode;
+  localStorage.setItem('defi_chart_mode', mode);
+
+  document.querySelectorAll('.cmbtn').forEach(b =>
+    b.classList.toggle('cmbtn-active',
+      (mode === 'own' && b.textContent === 'Próprio') ||
+      (mode === 'tv'  && b.textContent === 'TradingView')));
+
+  const ownWrap  = document.getElementById('own-chart-wrap');
+  const tvWrap   = document.getElementById('tv-chart-wrap');
+  const pBtns    = document.getElementById('period-btns');
+  const legend   = document.getElementById('chart-legend');
+
+  if (mode === 'own') {
+    if (ownWrap)  ownWrap.style.display  = 'block';
+    if (tvWrap)   tvWrap.style.display   = 'none';
+    if (pBtns)    pBtns.style.display    = 'flex';
+    if (legend)   legend.style.display   = 'inline';
+    const data = _ohlcCache[_chartPeriod];
+    if (data) initOwnChart(data);
+  } else {
+    if (ownWrap)  ownWrap.style.display  = 'none';
+    if (tvWrap)   tvWrap.style.display   = 'block';
+    if (pBtns)    pBtns.style.display    = 'none';
+    if (legend)   legend.style.display   = 'none';
+    initTVChart();
+  }
+};
+
+// Period selector (30d / 7d / 3d / 1d)
+window.setChartPeriod = async function(period) {
+  _chartPeriod = period;
+  localStorage.setItem('defi_chart_period', period);
+
+  document.querySelectorAll('.cpbtn').forEach(b =>
+    b.classList.toggle('cpbtn-active', b.textContent === period));
+
+  let data = _ohlcCache[period];
+  if (!data) {
+    try {
+      data = await fetchBTCOHLCPeriod(period);
+      _ohlcCache[period] = data;
+    } catch (e) {
+      console.warn('OHLC fetch:', e.message);
+      return;
+    }
+  }
+  if (_chartMode === 'own') initOwnChart(data);
+};
+
+// ── Render: Trade ─────────────────────────────────────────────────────────────
+function renderTrade(a, ohlcData = null) {
+  if (ohlcData) _ohlcCache[_chartPeriod] = ohlcData;
+
+  if (_loaded.trade) {
+    // Refresh: update only the analysis section (chart persists unchanged)
+    const sec = document.getElementById('trade-analysis-section');
+    if (sec) sec.innerHTML = analysisHtml(a);
+    // Refresh own chart data if visible
+    if (_chartMode === 'own' && ohlcData && _lwCandles) {
+      _lwCandles.setData(ohlcData);
+      const closes = ohlcData.map(d => d.close);
+      const e9  = calcEMA(closes, 9);
+      const e21 = calcEMA(closes, 21);
+      if (_lwEma9)  _lwEma9.setData( ohlcData.map((d,i) => ({ time: d.time, value: e9[i]  })));
+      if (_lwEma21) _lwEma21.setData(ohlcData.map((d,i) => ({ time: d.time, value: e21[i] })));
+      if (_lwChart) _lwChart.timeScale().fitContent();
+    }
+    return;
+  }
+
+  // First render: build full HTML
+  document.getElementById('trade-body').innerHTML = `
+    <div id="trade-chart-section" class="card mb16">
+      ${chartSectionHtml()}
+    </div>
+    <div id="trade-analysis-section">
+      ${analysisHtml(a)}
+    </div>`;
+
+  showBody('trade');
+  _loaded.trade = true;
+
+  if (_chartMode === 'own') {
+    initOwnChart(ohlcData || _ohlcCache[_chartPeriod]);
+  } else {
+    initTVChart();
+  }
+}
+
+// ── Quiz helpers ──────────────────────────────────────────────────────────────
+window.answerQuiz = function(btn, qid) {
+  const quiz = btn.closest('.quiz');
+  quiz.querySelectorAll('.quiz-opt').forEach(b => { b.disabled = true; });
+  const ok = btn.dataset.correct === 'true';
+  btn.classList.add(ok ? 'correct' : 'wrong');
+  if (!ok) quiz.querySelectorAll('.quiz-opt[data-correct="true"]').forEach(b => b.classList.add('correct'));
+  const fb = document.getElementById(`qfb-${qid}`);
+  if (fb) { fb.style.color = ok ? 'var(--green)' : 'var(--red)'; fb.textContent = ok ? '✓ Correto!' : '✗ Incorreto — reveja o conteúdo acima.'; }
+  const badge = document.getElementById(`lbadge-${qid}`);
+  if (badge) { badge.textContent = ok ? '✓ correto' : '✗ errado'; badge.className = 'lesson-badge ' + (ok ? 'done' : 'fail'); }
+  const st = window._quizState;
+  if (!st.answered.has(qid)) { st.answered.add(qid); if (ok) st.score++; }
+  const sc  = document.getElementById('qs-score');
+  const bar = document.getElementById('qs-bar');
+  const msg = document.getElementById('qs-msg');
+  if (sc)  sc.textContent = st.score;
+  if (bar) bar.style.width = `${st.score / 5 * 100}%`;
+  if (msg) {
+    const n = st.answered.size;
+    const msgs = ['Continue!','Bom começo!','Progredindo!','Ótimo!','Quase lá!','Parabéns — 100%!'];
+    msg.textContent = n === 5 ? (msgs[st.score] || msgs[msgs.length - 1]) : `${n}/5 respondidas`;
+  }
+};
+
+window.resetQuiz = function() { renderEscola(); };
+
+function lessonHtml(id, title, content, question, options) {
+  const opts = options.map(o =>
+    `<button class="quiz-opt" data-correct="${o.correct}" onclick="answerQuiz(this,${id})">${o.text}</button>`
+  ).join('');
+  return `
+  <details class="lesson" id="lesson-${id}">
+    <summary>
+      <span class="lesson-num">${id}</span>
+      <span class="lesson-title">${title}</span>
+      <span class="lesson-badge" id="lbadge-${id}">não iniciado</span>
+    </summary>
+    <div class="lesson-body">
+      ${content}
+      <div class="quiz">
+        <div class="quiz-q">${question}</div>
+        <div class="quiz-opts">${opts}</div>
+        <div class="quiz-fb" id="qfb-${id}"></div>
+      </div>
+    </div>
+  </details>`;
+}
+
+// ── Render: Escola ────────────────────────────────────────────────────────────
+function renderEscola() {
+  window._quizState = { score: 0, answered: new Set() };
+  document.getElementById('escola-body').innerHTML = `
+    <div class="card mb16" style="padding:13px 16px">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:28px;font-weight:600;color:var(--green);line-height:1">
+            <span id="qs-score">0</span><span style="font-size:14px;color:var(--dim)">/5</span>
+          </div>
+          <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">corretas</div>
+        </div>
+        <div style="flex:1;min-width:140px">
+          <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;margin-bottom:5px">
+            <div id="qs-bar" style="height:100%;background:var(--green);width:0%;transition:width .4s"></div>
+          </div>
+          <div id="qs-msg" style="font-size:11px;color:var(--dim)">Expanda uma lição e responda o quiz</div>
+        </div>
+        <button onclick="resetQuiz()" style="font-size:11px;padding:5px 12px">↺ Reiniciar</button>
+      </div>
+    </div>
+
+    ${lessonHtml(1, 'Uniswap v3 — Liquidez Concentrada', `
+      <p>No Uniswap v3 você define um <b>range de preço</b> onde seu capital fica ativo.
+         Dentro do range, cada swap gera fees para você. Fora do range, o capital fica parado e você não recebe nada.</p>
+      <div class="formula">fees = (fgInside − fgInsideLast) × liquidity / 2¹²⁸ + tokensOwed</div>
+      <dl class="kv">
+        <dt>IN RANGE</dt>     <dd class="c-green">Ganhando fees a cada swap realizado no pool</dd>
+        <dt>OUT OF RANGE</dt> <dd class="c-red">Capital inativo — sem fees até o preço retornar</dd>
+        <dt>tokensOwed</dt>   <dd>Fees tombadas no NFT, prontas para collect imediato</dd>
+        <dt>Range estreito</dt><dd>Mais fees por unidade de capital → maior risco de sair do range</dd>
+      </dl>
+    `, '📝 O que acontece quando o preço sai do range da sua posição Uniswap v3?', [
+      { text: 'O capital fica parado e para de gerar fees', correct: true },
+      { text: 'A posição é liquidada automaticamente pelo protocolo', correct: false },
+      { text: 'O range se ajusta automaticamente ao novo preço', correct: false },
+      { text: 'As fees dobram para compensar o tempo fora do range', correct: false },
+    ])}
+
+    ${lessonHtml(2, 'Aave v3 — Health Factor e Liquidação', `
+      <div class="formula">HF = (Colateral × Liquidation Threshold) / Dívida Total</div>
+      <dl class="kv">
+        <dt>HF &gt; 2.0</dt>  <dd class="c-green">Zona segura — sem risco imediato de liquidação</dd>
+        <dt>HF 1.5–2.0</dt>  <dd class="c-yellow">Atenção — monitore com frequência</dd>
+        <dt>HF &lt; 1.5</dt>  <dd class="c-red">Risco — reduza a dívida urgente</dd>
+        <dt>HF = 1.0</dt>    <dd class="c-red">LIQUIDAÇÃO — colateral leiloado com desconto</dd>
+      </dl>
+      <p>LTV ideal para WBTC colateral: <b>30–40%</b>. Sustenta queda de 30% no BTC sem disparar liquidação.</p>
+    `, '📝 Em qual valor exato do Health Factor ocorre a liquidação do colateral?', [
+      { text: '2.0 — zona de atenção', correct: false },
+      { text: '1.5 — zona de risco', correct: false },
+      { text: '1.0 — ponto de liquidação', correct: true },
+      { text: '0.5 — somente abaixo desse ponto', correct: false },
+    ])}
+
+    ${lessonHtml(3, 'Estratégia: LP Loop com Aave', `
+      <dl class="kv">
+        <dt>Passo 1</dt><dd>Depositar WBTC como colateral no Aave</dd>
+        <dt>Passo 2</dt><dd>Emprestar stablecoins (USDT/USDe) contra o colateral</dd>
+        <dt>Passo 3</dt><dd>Colocar WBTC + stablecoins em pool Uniswap v3</dd>
+        <dt>Passo 4</dt><dd>Fees da pool cobrem (ou superam) os juros do empréstimo</dd>
+        <dt>Meta</dt>   <dd>APR da pool &gt; APY da dívida → lucro líquido diário</dd>
+        <dt>Risco</dt>  <dd class="c-red">Queda do BTC reduz colateral → HF cai → risco de liquidação</dd>
+      </dl>
+      <p>O portfólio real = WBTC total (Aave + LP + wallet) + saldo de stablecoins — dívida Aave.</p>
+    `, '📝 Qual é o principal risco da estratégia LP Loop com Aave?', [
+      { text: 'As taxas de gas da Ethereum são muito altas', correct: false },
+      { text: 'Queda do BTC reduz colateral e pode levar à liquidação', correct: true },
+      { text: 'O Uniswap pode encerrar o pool a qualquer momento', correct: false },
+      { text: 'Os juros do Aave são fixos e não se ajustam ao mercado', correct: false },
+    ])}
+
+    ${lessonHtml(4, 'Análise Técnica — EMA, RSI, MACD, Bollinger', `
+      <dl class="kv">
+        <dt>EMA 9/21</dt>    <dd>Golden Cross (EMA9 &gt; EMA21) = tendência de alta confirmada</dd>
+        <dt>RSI 14</dt>      <dd>Abaixo de 30: sobrevendido (oportunidade). Acima de 70: sobrecomprado (cuidado)</dd>
+        <dt>MACD</dt>        <dd>EMA12 − EMA26. Bullish quando cruza a linha de sinal para cima</dd>
+        <dt>Bollinger %B</dt><dd>0% = fundo da banda (suporte). 100% = topo (resistência)</dd>
+      </dl>
+      <div class="formula">Score 3–4/4 → COMPRAR &nbsp;|&nbsp; Score 2/4 → AGUARDAR &nbsp;|&nbsp; Score 0–1/4 → VENDER</div>
+    `, '📝 O que indica um RSI abaixo de 30 no gráfico de BTC?', [
+      { text: 'Sobrecomprado — hora de realizar lucros', correct: false },
+      { text: 'Sobrevendido — possível oportunidade de compra', correct: true },
+      { text: 'MACD cruzando para baixo da linha de sinal', correct: false },
+      { text: 'Bollinger Bands se contraindo fortemente', correct: false },
+    ])}
+
+    ${lessonHtml(5, 'Matemática Uniswap v3 — Amounts e Liquidez', `
+      <div class="formula">amount0 = L × (sqrtUpper − sqrtCurrent) / (sqrtUpper × sqrtCurrent)</div>
+      <div class="formula">amount1 = L × (sqrtCurrent − sqrtLower)</div>
+      <dl class="kv">
+        <dt>L (liquidity)</dt><dd>Parâmetro interno que define o tamanho da posição dentro do range</dd>
+        <dt>sqrtPrice</dt>   <dd>Raiz quadrada do preço, normalizada: sqrtPriceX96 / 2⁹⁶</dd>
+        <dt>BigInt</dt>      <dd>Obrigatório para evitar perda de precisão em 128 bits</dd>
+        <dt>Fora do range</dt><dd>Preço &lt; floor → 100% token0. Preço &gt; ceil → 100% token1</dd>
+      </dl>
+    `, '📝 O que representa "liquidity" (L) nas fórmulas do Uniswap v3?', [
+      { text: 'O valor total em dólares da posição', correct: false },
+      { text: 'Um parâmetro interno que define o tamanho da posição dentro do range', correct: true },
+      { text: 'A quantidade de tokens depositados diretamente no contrato', correct: false },
+      { text: 'A taxa de fee multiplicada pelo volume diário do pool', correct: false },
+    ])}
+  `;
+}
+
+// ── Render: Links ─────────────────────────────────────────────────────────────
+function renderLinks() {
+  const addr = WALLET_ADDRESS;
+  document.getElementById('links-body').innerHTML = `
+    <div class="card">
+      <div class="ctitle">Links Úteis — DeFi</div>
+      <div class="links-grid">
+        <a class="lcard" href="https://app.uniswap.org/pool" target="_blank">
+          <h4>Uniswap App</h4>
+          <p>Gerenciar posições LP, coletar fees, adicionar/remover liquidez</p>
+        </a>
+        <a class="lcard" href="https://app.aave.com/" target="_blank">
+          <h4>Aave App</h4>
+          <p>Gerenciar colateral, pagar dívidas, monitorar Health Factor</p>
+        </a>
+        <a class="lcard" href="https://etherscan.io/address/${addr}" target="_blank">
+          <h4>Etherscan — Carteira</h4>
+          <p>Histórico completo de transações e saldos on-chain</p>
+        </a>
+        <a class="lcard" href="https://revert.finance/#/account/${addr}" target="_blank">
+          <h4>Revert Finance</h4>
+          <p>Analytics avançado para posições Uniswap v3, APR histórico</p>
+        </a>
+        <a class="lcard" href="https://defillama.com/" target="_blank">
+          <h4>DeFi Llama</h4>
+          <p>TVL de protocolos, yields, análise de mercado DeFi</p>
+        </a>
+        <a class="lcard" href="https://info.uniswap.org/#/pools" target="_blank">
+          <h4>Uniswap Info</h4>
+          <p>Analytics das pools: volume 24h, TVL, fees acumuladas</p>
+        </a>
+        <a class="lcard" href="https://www.tradingview.com/chart/?symbol=BITSTAMP%3ABTCUSD" target="_blank">
+          <h4>TradingView BTC/USD</h4>
+          <p>Gráficos profissionais e análise técnica avançada</p>
+        </a>
+        <a class="lcard" href="https://www.coingecko.com/en/coins/bitcoin" target="_blank">
+          <h4>CoinGecko — BTC</h4>
+          <p>Dados de mercado, histórico de preços e análises</p>
+        </a>
+        <a class="lcard" href="https://data.chain.link/feeds/ethereum/mainnet/btc-usd" target="_blank">
+          <h4>Chainlink BTC/USD</h4>
+          <p>Feed de preço on-chain usado por este dashboard</p>
+        </a>
+        <a class="lcard" href="https://dune.com/browse/dashboards" target="_blank">
+          <h4>Dune Analytics</h4>
+          <p>Dashboards on-chain customizados com SQL</p>
+        </a>
+      </div>
+    </div>
+  `;
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+applyTheme(_theme);
+if (_btcEntry > 0) document.getElementById('btc-entry-input').value = _btcEntry;
+document.getElementById('addr-input').value = currentAddr;
+buildHistoryUI();
+renderEscola();
+renderLinks();
+
+// Restore saved preferences
+(function initPrefs() {
+  // Refresh interval
+  const savedInt = localStorage.getItem(IKEY);
+  if (savedInt !== null) refreshInterval = parseInt(savedInt);
+  const sel = document.getElementById('interval-sel');
+  if (sel) sel.value = String(refreshInterval);
+
+  // Chart mode & period (already read into _chartMode/_chartPeriod at declaration)
+  // No extra UI to update — chartSectionHtml() uses these on first render
+})();
+
+// ── Tooltip: clamping de borda + touch toggle ─────────────────────────────────
+function clampTooltip(b) {
+  b.style.transform = '';
+  b.style.left      = '';
+  const r  = b.getBoundingClientRect();
+  const vw = window.innerWidth;
+  if (r.right > vw - 8)
+    b.style.transform = `translateX(calc(-50% - ${(r.right - vw + 8).toFixed(0)}px))`;
+  else if (r.left < 8) { b.style.left = '0'; b.style.transform = 'none'; }
+}
+document.addEventListener('mouseenter', e => {
+  if (!(e.target instanceof Element)) return;
+  const w = e.target.closest('.tip-wrap');
+  if (w) requestAnimationFrame(() => { const b = w.querySelector('.tip-bubble'); if (b) clampTooltip(b); });
+}, true);
+document.addEventListener('touchstart', e => {
+  if (!(e.target instanceof Element)) return;
+  const icon = e.target.closest('.tip-icon');
+  if (icon) {
+    e.preventDefault();
+    const w = icon.closest('.tip-wrap');
+    const wasOpen = w.classList.contains('tip-open');
+    document.querySelectorAll('.tip-wrap.tip-open').forEach(x => x.classList.remove('tip-open'));
+    if (!wasOpen) {
+      w.classList.add('tip-open');
+      requestAnimationFrame(() => { const b = w.querySelector('.tip-bubble'); if (b) clampTooltip(b); });
+    }
+    return;
+  }
+  if (!e.target.closest('.tip-wrap'))
+    document.querySelectorAll('.tip-wrap.tip-open').forEach(x => x.classList.remove('tip-open'));
+}, { passive: false });
+
+// Initial load — startTiers() é iniciado dentro de loadAll após os fetches
+loadAll(currentAddr);
+</script>
+</body>
+</html>
