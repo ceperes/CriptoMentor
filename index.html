@@ -552,6 +552,42 @@
       }
     }
 
+    /* ── Histórico de versões ── */
+    #hist-wrap { position:relative; display:flex; align-items:center; gap:4px; flex-shrink:0; }
+    .hist-btn {
+      background:var(--surface2); border:1px solid var(--border2); border-radius:var(--r);
+      color:var(--dim); font-family:var(--font); font-size:11px; padding:4px 8px;
+      cursor:pointer; transition:all .15s; white-space:nowrap;
+    }
+    .hist-btn:hover:not(:disabled) { border-color:var(--blue); color:var(--blue); }
+    .hist-btn:disabled { opacity:.35; cursor:default; pointer-events:none; }
+    #hist-badge {
+      background:var(--surface2); border:1px solid var(--border2); border-radius:var(--r);
+      color:var(--dim); font-family:var(--font); font-size:11px; padding:4px 9px;
+      cursor:pointer; transition:all .15s; white-space:nowrap;
+    }
+    #hist-badge:hover { border-color:var(--yellow); color:var(--yellow); }
+    #hist-badge.hist-active { background:rgba(245,197,24,.12); border-color:rgba(245,197,24,.5); color:var(--yellow); }
+    #header.hist-mode { border-bottom: 2px solid rgba(245,197,24,.8) !important; box-shadow:0 2px 16px rgba(245,197,24,.12); }
+    #hist-banner { display:none; background:rgba(245,197,24,.1); border-bottom:1px solid rgba(245,197,24,.3); padding:6px 20px; font-size:11px; color:var(--yellow); text-align:center; }
+    #hist-banner.visible { display:flex; align-items:center; justify-content:center; gap:12px; }
+    #hist-dropdown {
+      position:absolute; top:calc(100% + 6px); right:0;
+      background:var(--surface); border:1px solid var(--border2);
+      border-radius:var(--r); box-shadow:0 8px 24px rgba(0,0,0,.45);
+      z-index:500; min-width:290px; max-height:340px; overflow-y:auto; display:none;
+    }
+    #hist-dropdown.open { display:block; }
+    .hist-row {
+      display:flex; align-items:center; gap:10px;
+      padding:8px 13px; font-size:11px; color:var(--dim);
+      cursor:pointer; border-bottom:1px solid var(--border); transition:background .1s;
+    }
+    .hist-row:hover  { background:var(--surface2); color:var(--text); }
+    .hist-row.h-cur  { background:rgba(245,197,24,.07); color:var(--yellow); }
+    .hist-row:last-child { border-bottom:none; }
+    @media(max-width:600px) { #hist-snap { display:none !important; } }
+
     /* ── Card / Metric status borders ── */
     .card-ok     { border-color:rgba(0,232,122,.45); }
     .card-warn   { border-color:rgba(245,197,24,.45); }
@@ -653,6 +689,14 @@
       <option value="0">manual</option>
     </select>
   </div>
+
+  <div id="hist-wrap">
+    <button id="hist-prev" class="hist-btn" onclick="histNav(-1)" title="Snapshot anterior" disabled>←</button>
+    <button id="hist-badge" onclick="histToggleDropdown()" title="Histórico de versões">📊 —</button>
+    <button id="hist-next" class="hist-btn" onclick="histNav(+1)" title="Snapshot seguinte" disabled>→</button>
+    <button id="hist-snap" class="hist-btn" onclick="histSaveManual()" title="Salvar snapshot manual" style="font-size:13px;padding:3px 7px">📸</button>
+    <div id="hist-dropdown"></div>
+  </div>
 </div>
 
 <div id="tabs">
@@ -663,6 +707,11 @@
   <button class="tab-btn" data-tab="trade"    onclick="switchTab('trade')">Trade</button>
   <button class="tab-btn" data-tab="escola"   onclick="switchTab('escola')">Escola</button>
   <button class="tab-btn" data-tab="links"    onclick="switchTab('links')">Links</button>
+</div>
+
+<div id="hist-banner">
+  <span id="hist-banner-text">⏪ A visualizar snapshot histórico</span>
+  <button onclick="histGoTo(-1)" style="font-size:11px;padding:3px 10px;background:rgba(245,197,24,.15);border:1px solid rgba(245,197,24,.5);border-radius:3px;color:var(--yellow);cursor:pointer">↩ Voltar ao live</button>
 </div>
 
 <div id="content">
@@ -818,6 +867,15 @@ window._poolSim        = window._poolSim || {};   // { "posId_tokenIdx": {pct, o
 window._wethPct        = window._wethPct || 0;
 window._aaveSliderData = null;
 
+// ── Histórico de versões ─────────────────────────────────────────────────────
+const HIST_KEY           = 'defi_hist_v1';
+const HIST_MAX           = 10;
+const HIST_AUTO_INTERVAL = 15 * 60 * 1000;  // 15 min entre snapshots automáticos
+let _histView     = null;   // null = live; {prices,positions,aave,wallet} = histórico
+let _histIdx      = -1;     // -1 = live; 0..N-1 = índice no array de snapshots
+let _histDropOpen = false;
+let _histLastAuto = 0;
+
 window.simSetOption = function(posId, tokenIdx, option) {
   const key = `${posId}_${tokenIdx}`;
   if (!window._poolSim[key]) window._poolSim[key] = { pct: 0 };
@@ -880,6 +938,141 @@ window.simUpdate = function(posId, tokenIdx, pct) {
     <div style="font-size:10px;color:#999;margin-bottom:4px">${isDebt?'Pagando dívida':'Adicionando colateral'}: <b style="color:var(--text)">${fU(useUSD)}</b></div>
     <div style="font-size:11px;margin-bottom:5px">HF: <b style="color:${hfc(newHF)}">${newHF.toFixed(2)}</b> &nbsp;·&nbsp; LTV: <b>${newLTV.toFixed(1)}%</b></div>
     <div style="font-size:11px;font-weight:600;color:${sColor}">${sMsg}</div>`;
+};
+
+// ── Funções de histórico ──────────────────────────────────────────────────────
+function histGet()      { try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch { return []; } }
+function histPersist(a) { localStorage.setItem(HIST_KEY, JSON.stringify(a)); }
+
+function histAddSnapshot(manual = false) {
+  const prices    = cacheAll('prices');
+  const positions = cacheAll('positions');
+  const aave      = cacheAll('aave');
+  const wallet    = cacheAll('wallet');
+  if (!prices) return;
+  const arr = histGet();
+  arr.push({ ts: Date.now(), manual, hf: aave?.healthFactor ?? null, btc: prices.btc,
+             data: { prices, positions: positions ?? [], aave, wallet } });
+  if (arr.length > HIST_MAX) arr.shift();
+  histPersist(arr);
+  _histLastAuto = Date.now();
+  histUpdateUI();
+}
+
+function histUpdateUI() {
+  const arr   = histGet();
+  const n     = arr.length;
+  const live  = _histIdx === -1;
+  const cur   = live ? n : _histIdx + 1;
+  const badge = document.getElementById('hist-badge');
+  const prev  = document.getElementById('hist-prev');
+  const next  = document.getElementById('hist-next');
+  const hdr   = document.getElementById('header');
+  if (badge) { badge.textContent = n === 0 ? '📊 —' : `v${cur}/${n}`; badge.classList.toggle('hist-active', !live); }
+  if (prev)  prev.disabled  = n === 0 || _histIdx === 0;
+  if (next)  next.disabled  = n === 0 || _histIdx === -1;
+  if (hdr)   hdr.classList.toggle('hist-mode', !live);
+  const banner = document.getElementById('hist-banner');
+  if (banner) {
+    banner.classList.toggle('visible', !live);
+    if (!live && _histIdx >= 0) {
+      const snap = histGet()[_histIdx];
+      const fT   = ts => new Date(ts).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
+      const txt  = document.getElementById('hist-banner-text');
+      if (txt && snap) txt.textContent = `⏪ Snapshot v${_histIdx+1}/${n} — ${fT(snap.ts)}${snap.hf!=null?' · HF '+snap.hf.toFixed(2):''}${snap.btc?' · BTC $'+(snap.btc/1000).toFixed(1)+'k':''}`;
+    }
+  }
+  if (_histDropOpen) histBuildDropdown();
+}
+
+function histBuildDropdown() {
+  const dd  = document.getElementById('hist-dropdown');
+  if (!dd) return;
+  const arr = histGet();
+  const fT  = ts => new Date(ts).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+  const fD  = ts => {
+    const d = new Date(ts), today = new Date();
+    return d.toDateString() === today.toDateString()
+      ? fT(ts)
+      : d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) + ' ' + fT(ts);
+  };
+  const hfc = hf => hf >= 2 ? 'var(--green)' : hf >= 1.5 ? 'var(--yellow)' : 'var(--red)';
+  dd.innerHTML = `
+    <div style="padding:9px 13px;font-size:10px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+      <span>📊 Histórico de versões</span><span>${arr.length}/${HIST_MAX}</span>
+    </div>
+    ${arr.length === 0 ? `<div style="padding:16px 13px;font-size:11px;color:var(--dim);text-align:center">Nenhum snapshot ainda.<br>Use 📸 para salvar manualmente.</div>` : ''}
+    ${[...arr].reverse().map((snap, ri) => {
+      const i = arr.length - 1 - ri;
+      const isCur = i === _histIdx || (ri === 0 && _histIdx === -1);
+      return `<div class="hist-row${isCur ? ' h-cur' : ''}" onclick="histGoTo(${i})">
+        <span style="font-size:10px;min-width:22px;color:var(--dim)">v${i+1}</span>
+        <span style="flex:1">${snap.manual ? '📸 ' : ''}${fD(snap.ts)}</span>
+        ${snap.hf != null ? `<span style="color:${hfc(snap.hf)}">HF ${snap.hf.toFixed(2)}</span>` : ''}
+        <span style="color:var(--dim);font-size:10px">${snap.btc ? '$'+(snap.btc/1000).toFixed(1)+'k' : ''}</span>
+      </div>`;
+    }).join('')}
+    ${arr.length > 0 ? `<div style="padding:8px 13px;border-top:1px solid var(--border)">
+      <button onclick="histClear()" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:3px;color:var(--red);cursor:pointer;width:100%">🗑️ Limpar histórico</button>
+    </div>` : ''}`;
+}
+
+function histCloseDropdown() {
+  _histDropOpen = false;
+  document.getElementById('hist-dropdown')?.classList.remove('open');
+}
+
+window.histToggleDropdown = function() {
+  _histDropOpen = !_histDropOpen;
+  const dd = document.getElementById('hist-dropdown');
+  if (!dd) return;
+  if (_histDropOpen) {
+    histBuildDropdown();
+    dd.classList.add('open');
+    setTimeout(() => document.addEventListener('click', function h(e) {
+      if (!e.target.closest('#hist-wrap')) { histCloseDropdown(); document.removeEventListener('click', h); }
+    }), 0);
+  } else {
+    dd.classList.remove('open');
+  }
+};
+
+window.histNav = function(dir) {
+  const arr = histGet();
+  if (!arr.length) return;
+  let ni;
+  if (_histIdx === -1) ni = dir === -1 ? arr.length - 1 : -1;
+  else { ni = _histIdx + dir; if (ni >= arr.length) ni = -1; if (ni < 0) ni = 0; }
+  histGoTo(ni);
+};
+
+window.histGoTo = function(idx) {
+  histCloseDropdown();
+  const arr = histGet();
+  if (idx < 0 || idx >= arr.length) {
+    _histIdx = -1; _histView = null;
+    histUpdateUI(); renderAll(); return;
+  }
+  _histIdx  = idx;
+  _histView = arr[idx].data;
+  histUpdateUI();
+  renderAllFromData(_histView);
+};
+
+window.histSaveManual = function() {
+  histAddSnapshot(true);
+  const btn = document.getElementById('hist-snap');
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = '✓'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'rgba(0,232,122,.5)';
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ''; btn.style.borderColor = ''; }, 1000);
+  }
+};
+
+window.histClear = function() {
+  localStorage.removeItem(HIST_KEY);
+  _histIdx = -1; _histView = null;
+  histCloseDropdown(); histUpdateUI(); renderAll();
 };
 
 // ── Simulador WETH das pools → pagamento de dívida Aave ───────────────────────
@@ -1171,6 +1364,7 @@ async function loadAll(addr) {
 
   isLoading = false;
   renderAll();
+  if (!_histView && cacheAll('prices')) histAddSnapshot(false);
 
   if (!_loaded.ov) {
     const msg = 'Falha na conexão — verifique o RPC no config.js';
@@ -1228,11 +1422,15 @@ async function loadLowTier(addr) {
     if (aave) { cacheSet('aave', aave); _tierTs.low = Date.now(); }
   } catch(e) { console.warn('[LOW]', e.message); }
   renderAll();
+  if (!_histView && Date.now() - _histLastAuto > HIST_AUTO_INTERVAL && cacheAll('prices'))
+    histAddSnapshot(false);
   loadTrade(cacheAll('prices')?.btc).catch(e => console.warn('[trade/low]', e.message));
 }
 
 // ── Renderiza todas as abas a partir do cache ─────────────────────────────────
 function renderAll() {
+  if (_histView) { renderAllFromData(_histView); refreshStatus(); histUpdateUI(); return; }
+
   const prices    = cacheAll('prices');
   const gas       = cacheAll('gas');
   const positions = cacheAll('positions') ?? [];
@@ -1263,6 +1461,32 @@ function renderAll() {
   renderAave(aave, dailyCost, suggestions, ltvSt, prices, totalFees, positions, wallet);
   renderWallet(wallet, total);
   refreshStatus();
+  histUpdateUI();
+}
+
+// ── Renderiza com dados históricos (sem cache) ────────────────────────────────
+function renderAllFromData(d) {
+  const prices    = d.prices;
+  const gas       = cacheAll('gas') ?? { gwei: 0, label: '—', color: 'var(--dim)', collectCostUSD: 0 };
+  const positions = d.positions ?? [];
+  const aave      = d.aave;
+  const wallet    = d.wallet;
+  if (!prices) return;
+
+  const totalCap   = positions.reduce((s, p) => s + p.capitalUSD, 0);
+  const totalFees  = positions.reduce((s, p) => s + p.feeUSD,     0);
+  const net        = aave ? aave.totalCollateralUSD - aave.totalDebtUSD : 0;
+  const walletUSD  = wallet ? wallet.totalUSD : 0;
+  const total      = totalCap + totalFees + net + walletUSD;
+
+  const dailyCost   = aave ? calcDailyDebtCost(aave.debtsByToken, prices.btc) : 0;
+  const suggestions = aave ? calcPaymentSuggestions(aave, totalFees, dailyCost, prices.btc) : null;
+  const ltvSt       = aave ? getLTVStatus(aave.ltv, aave.totalCollateralUSD, aave.totalDebtUSD) : null;
+
+  renderOverview(prices, gas, positions, aave, totalCap, totalFees, wallet, total);
+  renderPool(positions, prices);
+  renderAave(aave, dailyCost, suggestions, ltvSt, prices, totalFees, positions, wallet);
+  renderWallet(wallet, total);
 }
 
 // ── Resumo inteligente e semáforo ─────────────────────────────────────────────
@@ -2785,6 +3009,8 @@ document.addEventListener('touchstart', e => {
   if (!e.target.closest('.tip-wrap'))
     document.querySelectorAll('.tip-wrap.tip-open').forEach(x => x.classList.remove('tip-open'));
 }, { passive: false });
+
+histUpdateUI(); // reflecte snapshots existentes no localStorage
 
 // Initial load — startTiers() é iniciado dentro de loadAll após os fetches
 loadAll(currentAddr);
