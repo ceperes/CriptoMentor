@@ -694,6 +694,13 @@
     /* ── HF Sparkline ── */
     .hf-spark { display:block; width:100%; height:34px; margin-top:8px; border-radius:3px; }
 
+    /* ── EMA alert badge ── */
+    #ema-alert { display:none; align-items:center; gap:4px; padding:2px 9px; border-radius:3px; font-size:10px; font-weight:600; white-space:nowrap; flex-shrink:0; }
+
+    /* ── BTC slider (Overview) ── */
+    #ov-btc-slider { accent-color:var(--yellow); width:100%; cursor:pointer; }
+    #ov-btc-slider-result { margin-top:10px; font-size:12px; min-height:22px; }
+
     /* ── Tx history (Wallet) ── */
     .tx-list { display:flex; flex-direction:column; }
     .tx-row { display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:11px; }
@@ -722,6 +729,7 @@
     <span class="sdot" id="sdot"></span>
     <span id="stext">—</span>
     <span id="countdown" style="font-size:10px"></span>
+    <span id="ema-alert"></span>
   </div>
 
   <div id="entry-wrap" style="display:flex;align-items:center;gap:5px;flex-shrink:0">
@@ -1243,6 +1251,143 @@ function drawLiquidityChart(canvasId, p) {
   if (curX > 20 && curX < W - 20)
     ctx.fillText(`$${Math.round(p.currentUSD / 1000)}k`, curX, H - 6);
 }
+
+// ── Pool range history ────────────────────────────────────────────────────────
+const RANGE_HIST_KEY  = 'defi_range_hist';
+const _prevRangeState = {};   // { [poolId]: boolean }
+
+function rangeHistGet()      { try { return JSON.parse(localStorage.getItem(RANGE_HIST_KEY) || '{}'); } catch { return {}; } }
+function rangeHistSet(d)     { localStorage.setItem(RANGE_HIST_KEY, JSON.stringify(d)); }
+
+function rangeHistTrack(positions) {
+  if (!positions.length) return;
+  const rh = rangeHistGet();
+  let dirty = false;
+  positions.forEach(p => {
+    if (!rh[p.id]) { rh[p.id] = { events: [], firstSeen: Date.now(), startedIn: p.inRange }; dirty = true; }
+    const prev = _prevRangeState[p.id];
+    if (prev !== undefined && prev !== p.inRange) {
+      rh[p.id].events.push({ ts: Date.now(), inRange: p.inRange });
+      if (rh[p.id].events.length > 500) rh[p.id].events.shift();
+      dirty = true;
+    }
+    _prevRangeState[p.id] = p.inRange;
+  });
+  if (dirty) rangeHistSet(rh);
+}
+
+function rangeHistStats(poolId, currentInRange) {
+  const rh   = rangeHistGet();
+  const data = rh[poolId];
+  if (!data || !data.firstSeen) return { pct: null, lastChange: null, totalEvents: 0 };
+  const now   = Date.now();
+  const total = now - data.firstSeen;
+  if (total < 60000) return { pct: null, lastChange: null, totalEvents: 0 };
+
+  // Reconstruct timeline: initial state + events + now
+  const startedIn = data.startedIn ?? currentInRange;
+  const timeline  = [
+    { ts: data.firstSeen, inRange: data.events.length > 0 ? startedIn : currentInRange },
+    ...data.events,
+    { ts: now, inRange: currentInRange },
+  ];
+  let inMs = 0;
+  for (let i = 0; i < timeline.length - 1; i++) {
+    if (timeline[i].inRange) inMs += timeline[i + 1].ts - timeline[i].ts;
+  }
+  const last = data.events[data.events.length - 1];
+  return { pct: Math.round(inMs / total * 100), lastChange: last ? new Date(last.ts) : null, totalEvents: data.events.length };
+}
+
+// ── Pool summary card (Overview) ─────────────────────────────────────────────
+function _poolSummaryCardHTML(p, meta) {
+  const m          = meta[p.id] || { investedUSD: p.capitalUSD, openTs: Date.now(), claimedUSD: 0 };
+  const ageDays    = m.openTs ? (Date.now() - m.openTs) / 86400000 : 0;
+  const pnlUSD     = p.capitalUSD - m.investedUSD;
+  const pnlSign    = pnlUSD >= 0 ? '+' : '';
+  const pnlCs      = pnlUSD >= 0 ? 'c-green' : 'c-red';
+  const feeTotal   = p.feeUSD + (m.claimedUSD || 0);
+  const aprPct     = ageDays >= 0.5 && m.investedUSD > 0
+                   ? ((feeTotal / m.investedUSD) * (365 / ageDays) * 100).toFixed(1) + '%'
+                   : '—';
+  const rs         = rangeHistStats(p.id, p.inRange);
+  const pctBadge   = rs.pct !== null
+                   ? `<span style="font-size:11px;color:var(--dim)">% tempo IN: <b class="${rs.pct >= 70 ? 'c-green' : rs.pct >= 40 ? 'c-yellow' : 'c-red'}">${rs.pct}%</b></span>`
+                   : '';
+  const borderCol  = p.inRange ? 'rgba(0,232,122,.4)' : 'rgba(245,197,24,.4)';
+  return `<div style="background:var(--surface);border:1px solid ${borderCol};border-radius:var(--r);padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-weight:600;color:var(--bright);white-space:nowrap">#${p.id} ${p.label}</span>
+    ${p.inRange ? '<span class="badge bg" style="font-size:9px">IN RANGE</span>' : '<span class="badge br" style="font-size:9px">OUT OF RANGE</span>'}
+    <span style="font-size:11px;color:var(--dim)">Capital: <b style="color:var(--bright)">${f$(p.capitalUSD)}</b></span>
+    <span style="font-size:11px;color:var(--dim)">Fees: <b class="c-green">${f$(p.feeUSD,4)}</b></span>
+    <span style="font-size:11px;color:var(--dim)">APR: <b class="c-blue">${aprPct}</b></span>
+    <span style="font-size:11px;color:var(--dim)">PnL: <b class="${pnlCs}">${pnlSign}${f$(pnlUSD)}</b></span>
+    ${pctBadge}
+  </div>`;
+}
+
+function buildPoolSummaryHTML(positions) {
+  if (!positions.length) return '';
+  const meta = poolMetaGet();
+  return `
+  <div class="sec-head">Resumo das Pools</div>
+  <div id="ov-pool-summary" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+    ${positions.map(p => _poolSummaryCardHTML(p, meta)).join('')}
+  </div>`;
+}
+
+// ── Pool canvas ResizeObserver ────────────────────────────────────────────────
+const _poolObservers = new Map();
+
+function setupPoolCanvasObservers(positions) {
+  positions.forEach(p => {
+    const cid    = `liq-${p.id}`;
+    const canvas = document.getElementById(cid);
+    if (!canvas) return;
+    if (_poolObservers.has(cid)) _poolObservers.get(cid).disconnect();
+    const obs = new ResizeObserver(() => requestAnimationFrame(() => drawLiquidityChart(cid, p)));
+    obs.observe(canvas);
+    _poolObservers.set(cid, obs);
+  });
+}
+
+// ── EMA crossover alert ───────────────────────────────────────────────────────
+function updateEMAAlert(a) {
+  const el = document.getElementById('ema-alert');
+  if (!el || !a?.ema9 || !a?.ema21) { if (el) el.style.display = 'none'; return; }
+  const gap  = Math.abs(a.ema9 - a.ema21) / a.ema21 * 100;
+  const bull = a.ema9 > a.ema21;
+  if (gap < 0.8) {
+    const col  = bull ? '#00e87a' : '#ff4444';
+    const bg   = bull ? 'rgba(0,232,122,.15)' : 'rgba(255,68,68,.15)';
+    const brd  = bull ? 'rgba(0,232,122,.4)'  : 'rgba(255,68,68,.4)';
+    el.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;background:${bg};border:1px solid ${brd};color:${col};animation:pulse 2s infinite`;
+    el.textContent   = `⚡ EMA cruzamento ${bull ? '↑ Alta' : '↓ Baixa'}`;
+  } else if (gap < 2.5) {
+    el.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;background:rgba(245,197,24,.12);border:1px solid rgba(245,197,24,.35);color:var(--yellow)`;
+    el.textContent   = `⚠ EMA ~${gap.toFixed(1)}% dist.`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── BTC price slider (Overview) ───────────────────────────────────────────────
+window.ovBtcSliderMove = function(val) {
+  const price = parseInt(val);
+  const valEl = document.getElementById('ov-btc-slider-val');
+  const resEl = document.getElementById('ov-btc-slider-result');
+  if (valEl) valEl.textContent = f$(price, 0);
+  if (!resEl) return;
+  const d = window._ovSliderData;
+  if (!d || !d.btcCurrent || !d.totalDebtUSD) return;
+  const scale  = price / d.btcCurrent;
+  const newCol = d.totalCollateralUSD * scale;
+  const newHF  = newCol > 0 ? (newCol * d.impliedLT) / d.totalDebtUSD : 0;
+  const newLTV = newCol > 0 ? (d.totalDebtUSD / newCol * 100) : 0;
+  const hfc    = hf => hf >= 2.0 ? 'var(--green)' : hf >= 1.5 ? 'var(--yellow)' : 'var(--red)';
+  const status = newHF >= 2.0 ? '✅ Zona segura' : newHF >= 1.5 ? '⚠️ Atenção' : '🔴 RISCO DE LIQUIDAÇÃO';
+  resEl.innerHTML = `HF simulado: <b style="font-size:14px;color:${hfc(newHF)}">${newHF.toFixed(3)}</b> &nbsp;·&nbsp; LTV: <b>${newLTV.toFixed(1)}%</b> &nbsp;·&nbsp; <span style="color:${hfc(newHF)}">${status}</span> &nbsp;<span style="color:var(--dim);font-size:10px">(colateral WBTC proporcional ao preço)</span>`;
+};
 
 // ── HF Sparkline (últimas 24h de snapshots) ───────────────────────────────────
 function drawHFSparkline(canvasId) {
@@ -1788,12 +1933,15 @@ function renderAll() {
   const suggestions = aave ? calcPaymentSuggestions(aave, totalFees, dailyCost, prices.btc) : null;
   const ltvSt       = aave ? getLTVStatus(aave.ltv, aave.totalCollateralUSD, aave.totalDebtUSD) : null;
 
+  rangeHistTrack(positions);
   renderOverview(prices, gas, positions, aave, totalCap, totalFees, wallet, total);
   renderPool(positions, prices);
   renderAave(aave, dailyCost, suggestions, ltvSt, prices, totalFees, positions, wallet);
   renderWallet(wallet, total);
   refreshStatus();
   histUpdateUI();
+  const trade = cacheAll('trade');
+  if (trade?.an) updateEMAAlert(trade.an);
 }
 
 // ── Renderiza com dados históricos (sem cache) ────────────────────────────────
@@ -2068,6 +2216,18 @@ function renderOverview(prices, gas, positions, aave, totalCap, totalFees, walle
   const summaryItems = generateSummary(prices, gas, positions, aave, totalFees, suggestOv);
   const nextAct    = getNextAction(prices, gas, positions, aave, totalFees, suggestOv);
 
+  // Prepara dados do slider BTC
+  if (aave) {
+    const impliedLT = aave.totalCollateralUSD > 0
+      ? (aave.healthFactor * aave.totalDebtUSD) / aave.totalCollateralUSD : 0.78;
+    window._ovSliderData = {
+      totalCollateralUSD: aave.totalCollateralUSD,
+      totalDebtUSD:       aave.totalDebtUSD,
+      impliedLT,
+      btcCurrent:         prices.btc,
+    };
+  }
+
   // Update-in-place on subsequent renders (no DOM flash)
   if (_loaded.ov) {
     const $ = id => document.getElementById(id);
@@ -2106,6 +2266,14 @@ function renderOverview(prices, gas, positions, aave, totalCap, totalFees, walle
     // Atualiza resumo inteligente a cada render
     const smartEl = document.getElementById('ov-smart-section');
     if (smartEl) smartEl.innerHTML = buildSmartHTML(aaveSt, poolSt, walletSt, summaryItems, nextAct);
+    // Pool summary in-place
+    const poolSumEl = document.getElementById('ov-pool-summary');
+    if (poolSumEl) { const meta = poolMetaGet(); poolSumEl.innerHTML = positions.map(p => _poolSummaryCardHTML(p, meta)).join(''); }
+    // Slider reset label ao preço actual
+    const slEl = document.getElementById('ov-btc-slider');
+    const slVl = document.getElementById('ov-btc-slider-val');
+    if (slEl) slEl.value = Math.round(prices.btc);
+    if (slVl) slVl.textContent = f$(prices.btc, 0);
     requestAnimationFrame(() => drawHFSparkline('ov-hf-spark'));
     return;
   }
@@ -2194,31 +2362,24 @@ function renderOverview(prices, gas, positions, aave, totalCap, totalFees, walle
       ${cardFoot('Aave v3 on-chain')}
     </div>` : ''}
 
-    ${positions.length > 0 ? (() => {
-      const meta = poolMetaGet();
+    ${positions.length > 0 ? buildPoolSummaryHTML(positions) : ''}
+
+    ${aave ? (() => {
+      const btcMin = Math.round(prices.btc * 0.5);
+      const btcMax = Math.round(prices.btc * 1.5);
       return `
-      <div class="sec-head">Resumo das Pools</div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-        ${positions.map(p => {
-          const m       = meta[p.id] || { investedUSD: p.capitalUSD, openTs: Date.now(), claimedUSD: 0 };
-          const ageDays = m.openTs ? (Date.now() - m.openTs) / 86400000 : 0;
-          const pnlUSD  = p.capitalUSD - m.investedUSD;
-          const pnlSign = pnlUSD >= 0 ? '+' : '';
-          const pnlCs   = pnlUSD >= 0 ? 'c-green' : 'c-red';
-          const totalFeeEver = p.feeUSD + (m.claimedUSD || 0);
-          const aprPct  = ageDays >= 0.5 && m.investedUSD > 0
-                        ? ((totalFeeEver / m.investedUSD) * (365 / ageDays) * 100).toFixed(1) + '%'
-                        : '—';
-          return `
-          <div style="background:var(--surface);border:1px solid ${p.inRange ? 'rgba(0,232,122,.4)' : 'rgba(245,197,24,.4)'};border-radius:var(--r);padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <span style="font-weight:600;color:var(--bright);white-space:nowrap">#${p.id} ${p.label}</span>
-            ${p.inRange ? '<span class="badge bg" style="font-size:9px">IN RANGE</span>' : '<span class="badge br" style="font-size:9px">OUT OF RANGE</span>'}
-            <span style="font-size:11px;color:var(--dim)">Capital: <b style="color:var(--bright)">${f$(p.capitalUSD)}</b></span>
-            <span style="font-size:11px;color:var(--dim)">Fees: <b class="c-green">${f$(p.feeUSD,4)}</b></span>
-            <span style="font-size:11px;color:var(--dim)">APR: <b class="c-blue">${aprPct}</b></span>
-            <span style="font-size:11px;color:var(--dim)">PnL: <b class="${pnlCs}">${pnlSign}${f$(pnlUSD)}</b></span>
-          </div>`;
-        }).join('')}
+      <div class="sec-head">Simulador de Preço BTC</div>
+      <div class="card mb16" style="padding:14px 16px">
+        <div class="ctitle" style="margin-bottom:10px">Impacto no Health Factor (colateral WBTC proporcional ao preço)</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:10px;color:var(--dim);white-space:nowrap">${f$(btcMin,0)}</span>
+          <input type="range" id="ov-btc-slider" min="${btcMin}" max="${btcMax}" value="${Math.round(prices.btc)}"
+                 style="flex:1;accent-color:var(--yellow)" oninput="ovBtcSliderMove(this.value)">
+          <span style="font-size:10px;color:var(--dim);white-space:nowrap">${f$(btcMax,0)}</span>
+          <span id="ov-btc-slider-val" style="font-size:12px;color:var(--yellow);white-space:nowrap;min-width:72px;text-align:right;font-weight:600">${f$(prices.btc,0)}</span>
+        </div>
+        <div id="ov-btc-slider-result" style="margin-top:10px;font-size:12px;color:var(--dim)">Mova o slider para simular o impacto no Health Factor.</div>
+        ${cardFoot('Simulação local · colateral WBTC escala linearmente com o preço BTC')}
       </div>`;
     })() : ''}
   `;
@@ -2266,6 +2427,7 @@ function renderPool(positions, prices) {
 
   document.getElementById('pool-body').innerHTML = positions.map(p => {
     const meta        = poolMetaInit(p);
+    const rs          = rangeHistStats(p.id, p.inRange);
     const ageDays     = meta.openTs ? (Date.now() - meta.openTs) / 86400000 : 0;
     const ageStr      = ageDays < 1   ? `${Math.round(ageDays * 24)}h`
                       : ageDays < 30  ? `${ageDays.toFixed(1)} dias`
@@ -2322,7 +2484,7 @@ function renderPool(positions, prices) {
         <div class="pdi">
           <div class="pdi-label">Posição aberta há</div>
           <div class="pdi-val">${ageStr}</div>
-          <div class="pdi-sub">NFT #${p.id}</div>
+          <div class="pdi-sub">NFT #${p.id}${rs.pct !== null ? ` · <span class="${rs.pct >= 70 ? 'c-green' : rs.pct >= 40 ? 'c-yellow' : 'c-red'}">${rs.pct}% IN RANGE</span>` : ''}</div>
         </div>
         <div class="pdi">
           <div class="pdi-label">Capital Atual</div>
@@ -2415,9 +2577,10 @@ function renderPool(positions, prices) {
   showBody('pool');
   _loaded.pool = true;
 
-  // Renderiza canvas após DOM atualizado
+  // Renderiza canvas + instala ResizeObserver
   requestAnimationFrame(() => {
     positions.forEach(p => drawLiquidityChart(`liq-${p.id}`, p));
+    setupPoolCanvasObservers(positions);
   });
 }
 
