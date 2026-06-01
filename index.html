@@ -691,6 +691,9 @@
     .modal-close { margin-top:14px; width:100%; padding:8px; background:none; border:1px solid var(--border); border-radius:var(--r); color:var(--dim); font-family:var(--font); font-size:11px; cursor:pointer; transition:all .15s; }
     .modal-close:hover { border-color:var(--red); color:var(--red); }
 
+    /* ── HF Sparkline ── */
+    .hf-spark { display:block; width:100%; height:34px; margin-top:8px; border-radius:3px; }
+
     /* ── Tx history (Wallet) ── */
     .tx-list { display:flex; flex-direction:column; }
     .tx-row { display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:11px; }
@@ -1241,6 +1244,74 @@ function drawLiquidityChart(canvasId, p) {
     ctx.fillText(`$${Math.round(p.currentUSD / 1000)}k`, curX, H - 6);
 }
 
+// ── HF Sparkline (últimas 24h de snapshots) ───────────────────────────────────
+function drawHFSparkline(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const pts    = histGet()
+    .filter(s => s.ts >= cutoff && s.hf != null)
+    .map(s => s.hf);
+
+  const dpr = window.devicePixelRatio || 1;
+  const W   = canvas.offsetWidth  || 140;
+  const H   = canvas.offsetHeight || 34;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  if (pts.length < 2) {
+    ctx.fillStyle = 'rgba(102,102,102,0.4)';
+    ctx.font      = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('aguardando dados (15 min)…', W / 2, H / 2 + 3);
+    return;
+  }
+
+  const minV  = Math.min(...pts, 1.0);
+  const maxV  = Math.max(...pts, minV + 0.2);
+  const spanY = maxV - minV || 0.2;
+  const PAD   = 4;
+  const toX   = i => (i / (pts.length - 1)) * W;
+  const toY   = v => H - PAD - ((v - minV) / spanY) * (H - PAD * 2);
+
+  const lastHF  = pts[pts.length - 1];
+  const lineCol = lastHF >= 2.0 ? '#00e87a' : lastHF >= 1.5 ? '#f5c518' : '#ff4444';
+  const fillCol = lastHF >= 2.0 ? 'rgba(0,232,122,.1)' : lastHF >= 1.5 ? 'rgba(245,197,24,.1)' : 'rgba(255,68,68,.1)';
+
+  // Fill area
+  ctx.beginPath();
+  pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = fillCol;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  pts.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+  ctx.strokeStyle = lineCol;
+  ctx.lineWidth   = 1.5;
+  ctx.lineJoin    = 'round';
+  ctx.stroke();
+
+  // HF = 1.5 reference line
+  if (minV < 1.5 && maxV > 1.5) {
+    ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = 'rgba(245,197,24,0.45)';
+    ctx.lineWidth   = 0.5;
+    ctx.beginPath(); ctx.moveTo(0, toY(1.5)); ctx.lineTo(W, toY(1.5)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Dot at latest value
+  ctx.beginPath();
+  ctx.arc(W, toY(lastHF), 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = lineCol;
+  ctx.fill();
+}
+
 // ── Sub-tabs ──────────────────────────────────────────────────────────────────
 window.switchSubTab = function(tabId, subId) {
   const tabEl = document.getElementById(`tab-${tabId}`);
@@ -1310,17 +1381,29 @@ window.closeWalletModal = function() {
   document.getElementById('defi-modal-overlay').classList.remove('open');
 };
 
-// ── Últimas transações via Etherscan (sem API key) ────────────────────────────
+// ── Últimas transações via Etherscan (ETH + ERC-20 em paralelo) ──────────────
 const _txCache = {};
 async function fetchRecentTxs(addr) {
   if (_txCache[addr] && Date.now() - _txCache[addr].ts < 60000) return _txCache[addr].data;
+  const base = `https://api.etherscan.io/api?address=${addr}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc&apikey=`;
   try {
-    const url = `https://api.etherscan.io/api?module=account&action=txlist&address=${addr}&startblock=0&endblock=99999999&page=1&offset=8&sort=desc&apikey=`;
-    const r   = await fetch(url);
-    const j   = await r.json();
-    const data = j.status === '1' ? (j.result || []).slice(0, 8) : [];
-    _txCache[addr] = { data, ts: Date.now() };
-    return data;
+    const [rEth, rTok] = await Promise.allSettled([
+      fetch(`${base}&module=account&action=txlist`).then(r => r.json()),
+      fetch(`${base}&module=account&action=tokentx`).then(r => r.json()),
+    ]);
+    const ethTxs = rEth.status === 'fulfilled' && rEth.value.status === '1'
+      ? (rEth.value.result || []).map(t => ({ ...t, _type: 'eth' }))
+      : [];
+    const tokTxs = rTok.status === 'fulfilled' && rTok.value.status === '1'
+      ? (rTok.value.result || []).map(t => ({ ...t, _type: 'token' }))
+      : [];
+    const seen   = new Set();
+    const merged = [...ethTxs, ...tokTxs]
+      .filter(t => { const k = t.hash + (t.logIndex || ''); if (seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => parseInt(b.timeStamp) - parseInt(a.timeStamp))
+      .slice(0, 10);
+    _txCache[addr] = { data: merged, ts: Date.now() };
+    return merged;
   } catch { return []; }
 }
 
@@ -2023,6 +2106,7 @@ function renderOverview(prices, gas, positions, aave, totalCap, totalFees, walle
     // Atualiza resumo inteligente a cada render
     const smartEl = document.getElementById('ov-smart-section');
     if (smartEl) smartEl.innerHTML = buildSmartHTML(aaveSt, poolSt, walletSt, summaryItems, nextAct);
+    requestAnimationFrame(() => drawHFSparkline('ov-hf-spark'));
     return;
   }
 
@@ -2089,6 +2173,7 @@ function renderOverview(prices, gas, positions, aave, totalCap, totalFees, walle
           <div class="mlabel">${tip('Health Factor', '(Colateral × Liquidation Threshold) ÷ Dívida. Abaixo de 1.0 = liquidação automática do colateral.')}</div>
           <div class="mval" id="ov-hf" style="color:${hfColor(aave.healthFactor)}">${aave.healthFactor.toFixed(3)}</div>
           <div class="msub">${aave.healthFactor >= 2 ? 'Zona segura' : aave.healthFactor >= 1.5 ? '⚠ Atenção' : '⚠ RISCO!'}</div>
+          <canvas id="ov-hf-spark" class="hf-spark" title="HF nas últimas 24h"></canvas>
         </div>
         <div class="metric ${ltvStatusClass(aave.ltv)}">
           <div class="mlabel">${tip('LTV Atual', 'Loan-to-Value: dívida ÷ colateral. Ideal 30–40% para WBTC. Acima de 60% = zona de risco elevado.')}</div>
@@ -2139,6 +2224,7 @@ function renderOverview(prices, gas, positions, aave, totalCap, totalFees, walle
   `;
   showBody('ov');
   _loaded.ov = true;
+  requestAnimationFrame(() => drawHFSparkline('ov-hf-spark'));
 }
 
 // ── Render: Pool ──────────────────────────────────────────────────────────────
@@ -2805,7 +2891,7 @@ function renderWallet(wallet, totalPortfolio) {
   showBody('wallet');
   _loaded.wallet = true;
 
-  // Carrega transações recentes de forma assíncrona
+  // Carrega transações recentes de forma assíncrona (ETH + ERC-20)
   fetchRecentTxs(addr).then(txs => {
     const el = document.getElementById('wallet-txs-list');
     if (!el) return;
@@ -2813,27 +2899,43 @@ function renderWallet(wallet, totalPortfolio) {
       el.innerHTML = `<div style="color:var(--dim);font-size:11px;padding:8px 0">Nenhuma transação encontrada ou API indisponível.</div>`;
       return;
     }
+    const short = h => `${h.slice(0,8)}…${h.slice(-6)}`;
     el.innerHTML = `<div class="tx-list">${txs.map(tx => {
-      const isIn   = tx.to?.toLowerCase() === addr.toLowerCase();
-      const isOut  = tx.from?.toLowerCase() === addr.toLowerCase();
-      const dir    = isIn && !isOut ? 'in' : 'out';
-      const label  = isIn && !isOut ? 'ENTRADA' : 'SAÍDA';
-      const ethVal = parseFloat(ethers.formatEther(tx.value || '0'));
-      const ts     = new Date(parseInt(tx.timeStamp) * 1000)
-                       .toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
-      const status = tx.isError === '0' ? '✓' : '✗';
+      const isIn     = tx.to?.toLowerCase() === addr.toLowerCase();
+      const isOut    = tx.from?.toLowerCase() === addr.toLowerCase();
+      const dir      = isIn && !isOut ? 'in' : 'out';
+      const label    = isIn && !isOut ? 'ENTRADA' : 'SAÍDA';
+      const ts       = new Date(parseInt(tx.timeStamp) * 1000)
+                        .toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const status   = tx.isError === '0' ? '✓' : '✗';
       const statusCs = tx.isError === '0' ? 'c-green' : 'c-red';
-      const short  = h => `${h.slice(0,8)}…${h.slice(-6)}`;
+
+      let valueHtml = '';
+      let typeBadge = '';
+      if (tx._type === 'token') {
+        const dec = parseInt(tx.tokenDecimal || '18');
+        const amt = parseFloat(tx.value) / Math.pow(10, dec);
+        const sym = tx.tokenSymbol || '?';
+        const fmtAmt = dec <= 6 ? amt.toFixed(2) : amt.toPrecision(4);
+        valueHtml = `<span style="font-size:11px;color:var(--bright)">${fmtAmt} ${sym}</span>`;
+        typeBadge = `<span style="font-size:9px;color:var(--purple);border:1px solid rgba(176,110,243,.3);background:rgba(176,110,243,.1);padding:1px 5px;border-radius:3px">${sym}</span>`;
+      } else {
+        const ethVal = parseFloat(ethers.formatEther(tx.value || '0'));
+        if (ethVal > 0) valueHtml = `<span style="font-size:11px;color:var(--bright)">${ethVal.toFixed(5)} ETH</span>`;
+        typeBadge = `<span style="font-size:9px;color:var(--blue);border:1px solid rgba(59,158,255,.3);background:rgba(59,158,255,.1);padding:1px 5px;border-radius:3px">ETH</span>`;
+      }
+
       return `
         <div class="tx-row">
           <span class="tx-badge tx-${dir}">${label}</span>
           <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
               <a href="https://etherscan.io/tx/${tx.hash}" target="_blank" style="color:var(--blue);font-size:10px;font-family:var(--font)">${short(tx.hash)}</a>
+              ${typeBadge}
               <span class="${statusCs}" style="font-size:10px">${status}</span>
-              ${ethVal > 0 ? `<span style="font-size:11px;color:var(--bright)">${ethVal.toFixed(5)} ETH</span>` : ''}
+              ${valueHtml}
             </div>
-            <div style="font-size:10px;color:var(--dim);margin-top:1px">
+            <div style="font-size:10px;color:var(--dim);margin-top:2px">
               ${ts} · ${dir === 'in' ? 'De: ' + short(tx.from) : 'Para: ' + short(tx.to)}
             </div>
           </div>
