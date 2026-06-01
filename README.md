@@ -1,110 +1,85 @@
-# ⬡ DeFi Dashboard — Carlos
+# ⬡ DeFi Dashboard
 
-Dashboard pessoal para monitoramento de operações DeFi em tempo real.
-Lê dados diretamente da blockchain Ethereum via Ethers.js + RPCs públicos.
+Dashboard pessoal para monitoramento de operações DeFi em tempo real — sem backend, sem chaves de API. Lê dados directamente da blockchain Ethereum via Ethers.js + RPCs públicos.
 
----
-
-## 📁 Estrutura do projeto
-
-```
-defi-dashboard/
-├── index.html              ← Painel principal (abrir no browser)
-├── package.json
-├── js/
-│   ├── config.js           ← Endereços, ABIs, constantes
-│   ├── provider.js         ← Conexão RPC com fallback
-│   ├── prices.js           ← Preços Chainlink + CoinGecko
-│   ├── uniswap.js          ← Posições LP + cálculos de amounts/fees
-│   ├── aave.js             ← Posição Aave v3 + sugestões de pagamento
-│   └── analysis.js         ← EMA, RSI, MACD, Bollinger, sinais de trade
-└── test/
-    └── test-uniswap.js     ← Testa fórmulas antes de usar no painel
-```
+![Overview](docs/screenshot-overview.png)
 
 ---
 
-## 🚀 Como usar
+## Funcionalidades
 
-### 1. Testar as fórmulas (primeiro passo sempre)
-```powershell
-cd P:\iaClaude\defi-dashboard
-node test/test-uniswap.js
-```
-Deve mostrar: `✅ Todas as fórmulas estão corretas!`
+**Overview** — semáforo Aave/Pools/Wallet, resumo inteligente, próxima acção recomendada, preços BTC/ETH/Gas via Chainlink on-chain.
 
-### 2. Abrir o dashboard
-Basta abrir `index.html` no Chrome/Edge.
-Cole o endereço da carteira e clique em Carregar.
+**Pool** — posições Uniswap v3 com capital, fees acumuladas (via `feeGrowthInside`), range bar e alerta OUT OF RANGE.
 
-### 3. Servir localmente (opcional, para ES modules)
-```powershell
-npx serve . --port 3000
-# Acessa: http://localhost:3000
-```
+**Aave** — Health Factor com gauge de 3 camadas (preços BTC / barra gradiente / escala HF), simulador por pool (slider por token com toggle colateral/dívida), ranking de cenários.
+
+![Aave](docs/screenshot-aave.png)
+
+**Wallet** — saldos ERC-20, composição do portfólio.
+
+**Trade** — gráfico OHLC BTC (30d/7d/3d/1d) com EMA9/EMA21, sinal COMPRAR/VENDER/NEUTRA baseado em RSI + MACD + Bollinger Bands.
+
+**Histórico** — snapshots automáticos a cada 15min, navegação `← v8/10 →`, dropdown com HF e BTC price por versão.
 
 ---
 
-## 🛠️ Desenvolvimento com Claude Code
+## Stack
 
-Se você instalou o Claude Code, use assim:
-```powershell
-cd P:\iaClaude\defi-dashboard
-claude
+| Camada | Tecnologia |
+|---|---|
+| UI | HTML5 + CSS3 + vanilla ES6 (sem framework) |
+| Blockchain | Ethers.js v6 · 4 RPCs com fallback automático |
+| Preços | Chainlink on-chain → Binance → CoinGecko |
+| Gráficos | Lightweight Charts v4 · TradingView widget |
+| Persistência | `localStorage` (histórico, tema, preferências) |
+
+---
+
+## Início rápido
+
+```bash
+npm install
+npm test        # valida fórmulas Uniswap v3
+npm run dev     # http://localhost:3000
 ```
 
-Comandos úteis dentro do Claude Code:
-- `"Adicione suporte para a rede Arbitrum"`
-- `"Corrija o cálculo de fees da posição #1273700"`
-- `"Adicione um alerta quando o HF cair abaixo de 1.8"`
-- `"Crie um gráfico de evolução do patrimônio"`
-
-O Claude Code pode:
-✅ Ler e editar todos os arquivos do projeto
-✅ Rodar `node test/test-uniswap.js` para verificar as fórmulas
-✅ Ver erros reais antes de mostrar no browser
-✅ Dividir o trabalho em arquivos organizados
+Cole o endereço da carteira no header e clique **Carregar**.
 
 ---
 
-## 📊 Dados lidos on-chain
+## Arquitectura
 
-| Dado | Fonte | Arquivo |
-|------|-------|---------|
-| Preço BTC/ETH | Chainlink Mainnet | `prices.js` |
-| Saldos carteira | Contratos ERC-20 | `provider.js` |
-| Colateral + Dívida Aave | Aave v3 Pool | `aave.js` |
-| Health Factor + LTV | Aave v3 Pool | `aave.js` |
-| Posições Uniswap v3 | NFT Position Manager | `uniswap.js` |
-| Capital da pool | Cálculo local (tick math) | `uniswap.js` |
-| Fees acumuladas | feeGrowthInside on-chain | `uniswap.js` |
-| Análise técnica | CoinGecko histórico | `analysis.js` |
+```
+index.html          ← UI, estilos, lógica de render (~2700 linhas)
+js/
+  config.js         ← ABIs, endereços, constantes
+  provider.js       ← RPC com fallback (publicnode → ankr → cloudflare → llamarpc)
+  prices.js         ← Chainlink + Binance + CoinGecko
+  uniswap.js        ← Uniswap v3: sqrtX96toNorm, calcAmounts, calcFees (BigInt)
+  aave.js           ← Aave v3: colateral, dívida, HF, sugestões de pagamento
+  analysis.js       ← EMA, RSI, MACD, Bollinger, sinal de trade
+test/
+  test-uniswap.js   ← testes das fórmulas de matemática concentrada
+docs/               ← screenshots
+```
 
----
-
-## 🔧 Configuração
-
-Edite `js/config.js` para:
-- Alterar `WALLET_ADDRESS` (endereço padrão)
-- Atualizar `AAVE_DEBT_APYS` se as taxas mudarem
-- Adicionar novos tokens conhecidos
-- Trocar RPCs se algum ficar instável
+**Refresh por camada:**
+- HIGH 15s — preços + gas
+- MID 30s — posições Uniswap + wallet
+- LOW 60s — Aave + análise técnica + auto-snapshot
 
 ---
 
-## 📋 Carteira monitorada
+## Configuração
 
-- **Endereço**: `0x4D881568f24fFC38496A1832a53f23f0E63cBcd1`
-- **Redes**: Ethereum Mainnet (Arbitrum, Base, Optimism — em breve)
-- **Pools**: NFT #1291052 e #1273700 (WBTC/USDT Uniswap v3)
-- **Aave**: WBTC colateral + dívidas USDT/USDe/mUSD
+Edite `js/config.js` para alterar `WALLET_ADDRESS`, `AAVE_DEBT_APYS` ou adicionar tokens.
 
 ---
 
-## 🎯 Próximas melhorias
+## Próximas melhorias
 
-- [ ] Suporte a Arbitrum, Base, Optimism
-- [ ] Histórico de patrimônio (localStorage)
-- [ ] Alertas por Telegram/email quando HF < 1.8
-- [ ] Simulador de cenários (e se BTC cair 20%?)
+- [ ] Suporte a Arbitrum / Base / Optimism
+- [ ] Alertas por Telegram quando HF < 1.8
+- [ ] Histórico de patrimônio em gráfico
 - [ ] Integração com Revert Finance API
